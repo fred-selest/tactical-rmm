@@ -47,6 +47,14 @@ bash "$SCRIPT_DIR/plesk_check_security.sh"
 [ $? -ne 0 ] && ERREUR=1
 echo ""
 
+# Docker (si installé)
+if command -v docker &> /dev/null; then
+    echo "========================================"
+    bash "$SCRIPT_DIR/plesk_check_docker.sh"
+    [ $? -ne 0 ] && ERREUR=1
+    echo ""
+fi
+
 echo "========================================"
 if [ $ERREUR -eq 0 ]; then
     echo "RESULTAT: Tout est OK"

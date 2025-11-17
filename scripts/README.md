@@ -13,6 +13,8 @@ Scripts Bash pour surveiller un serveur Plesk via Tactical RMM.
 | `plesk_check_mail.sh` | File d'attente email |
 | `plesk_check_backup.sh` | État des sauvegardes |
 | `plesk_check_security.sh` | Fail2ban, tentatives connexion |
+| `plesk_check_docker.sh` | Conteneurs Docker, ressources, santé |
+| `plesk_check_docker_compose.sh` | Stacks Docker Compose |
 
 ## Installation dans Tactical RMM
 
@@ -39,6 +41,8 @@ wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/ple
 wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/plesk_check_mail.sh
 wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/plesk_check_backup.sh
 wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/plesk_check_security.sh
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/plesk_check_docker.sh
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/plesk_check_docker_compose.sh
 chmod +x *.sh
 ```
 
