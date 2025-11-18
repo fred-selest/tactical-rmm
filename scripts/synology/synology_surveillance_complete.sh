@@ -76,44 +76,73 @@ echo ""
 
 TEMP_MAX=50
 
-for disk in /dev/sd[a-z]; do
+# Trouver smartctl
+SMARTCTL=""
+if command -v smartctl &> /dev/null; then
+    SMARTCTL="smartctl"
+elif [ -x /usr/syno/bin/smartctl ]; then
+    SMARTCTL="/usr/syno/bin/smartctl"
+fi
+
+# Trouver les disques - plusieurs méthodes pour DSM 7
+DISKS=""
+if command -v lsblk &> /dev/null; then
+    DISKS=$(lsblk -d -n -o NAME 2>/dev/null | grep -E "^sd|^sata|^nvme")
+fi
+if [ -z "$DISKS" ]; then
+    DISKS=$(ls /dev/sd[a-z] /dev/sata[0-9] /dev/nvme[0-9]n[0-9] 2>/dev/null | xargs -n1 basename 2>/dev/null)
+fi
+if [ -z "$DISKS" ]; then
+    DISKS=$(ls /sys/block/ 2>/dev/null | grep -E "^sd|^sata|^nvme")
+fi
+
+# Parcourir les disques
+for disk_name in $DISKS; do
+    disk="/dev/$disk_name"
+
     if [ -b "$disk" ]; then
-        disk_name=$(basename "$disk")
-
-        # Informations SMART
-        smart_info=$(smartctl -i "$disk" 2>/dev/null)
-        model=$(echo "$smart_info" | grep "Device Model" | cut -d: -f2 | xargs)
-
-        # État de santé
-        health=$(smartctl -H "$disk" 2>/dev/null | grep "SMART overall-health" | cut -d: -f2 | xargs)
-
-        # Température
-        temp=$(smartctl -A "$disk" 2>/dev/null | grep "Temperature_Celsius" | awk '{print $10}')
-
         echo "Disque: $disk_name"
-        [ -n "$model" ] && echo "  Modèle: $model"
 
-        if [ "$health" == "PASSED" ]; then
-            echo "  [OK] Santé SMART: $health"
-        else
-            echo "  [ALERTE] Santé SMART: $health"
-            ERREUR=1
-        fi
+        if [ -n "$SMARTCTL" ]; then
+            # Informations SMART
+            smart_info=$($SMARTCTL -i "$disk" 2>/dev/null)
+            model=$(echo "$smart_info" | grep -E "Device Model|Model Family|Product:" | head -1 | cut -d: -f2 | xargs)
 
-        if [ -n "$temp" ]; then
-            if [ "$temp" -gt "$TEMP_MAX" ]; then
-                echo "  [ALERTE] Température: ${temp}°C (> ${TEMP_MAX}°C)"
-                ERREUR=1
-            else
-                echo "  [OK] Température: ${temp}°C"
+            [ -n "$model" ] && echo "  Modèle: $model"
+
+            # État de santé
+            health=$($SMARTCTL -H "$disk" 2>/dev/null | grep -E "SMART overall-health|SMART Health Status" | cut -d: -f2 | xargs)
+
+            if [ -n "$health" ]; then
+                if [[ "$health" == "PASSED" ]] || [[ "$health" == "OK" ]]; then
+                    echo "  [OK] Santé SMART: $health"
+                else
+                    echo "  [ALERTE] Santé SMART: $health"
+                    ERREUR=1
+                fi
             fi
-        fi
 
-        # Secteurs défaillants
-        reallocated=$(smartctl -A "$disk" 2>/dev/null | grep "Reallocated_Sector_Ct" | awk '{print $10}')
-        if [ -n "$reallocated" ] && [ "$reallocated" -gt 0 ]; then
-            echo "  [ALERTE] Secteurs réalloués: $reallocated"
-            ERREUR=1
+            # Température
+            temp=$($SMARTCTL -A "$disk" 2>/dev/null | grep -E "Temperature_Celsius|Airflow_Temperature" | head -1 | awk '{print $10}')
+            if [ -z "$temp" ]; then
+                temp=$($SMARTCTL -A "$disk" 2>/dev/null | grep "Current Drive Temperature" | awk '{print $4}')
+            fi
+
+            if [ -n "$temp" ] && [ "$temp" -gt 0 ] 2>/dev/null; then
+                if [ "$temp" -gt "$TEMP_MAX" ]; then
+                    echo "  [ALERTE] Température: ${temp}°C (> ${TEMP_MAX}°C)"
+                    ERREUR=1
+                else
+                    echo "  [OK] Température: ${temp}°C"
+                fi
+            fi
+
+            # Secteurs défaillants
+            reallocated=$($SMARTCTL -A "$disk" 2>/dev/null | grep "Reallocated_Sector_Ct" | awk '{print $10}')
+            if [ -n "$reallocated" ] && [ "$reallocated" -gt 0 ] 2>/dev/null; then
+                echo "  [ALERTE] Secteurs réalloués: $reallocated"
+                ERREUR=1
+            fi
         fi
 
         echo ""
