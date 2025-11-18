@@ -203,7 +203,7 @@ for service_info in "${services_check[@]}"; do
     service=$(echo "$service_info" | cut -d: -f1)
     nom=$(echo "$service_info" | cut -d: -f2)
 
-    if pgrep -x "$service" > /dev/null; then
+    if ps aux 2>/dev/null | grep -v grep | grep -q "$service"; then
         echo "[OK] $nom"
     fi
 done
