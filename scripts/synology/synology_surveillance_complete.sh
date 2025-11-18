@@ -107,8 +107,10 @@ for disk_name in $DISKS; do
             # Informations SMART
             smart_info=$($SMARTCTL -i "$disk" 2>/dev/null)
             model=$(echo "$smart_info" | grep -E "Device Model|Model Family|Product:" | head -1 | cut -d: -f2 | xargs)
+            serial=$(echo "$smart_info" | grep -E "Serial Number|Serial number:" | head -1 | sed 's/.*: *//')
 
             [ -n "$model" ] && echo "  Modèle: $model"
+            [ -n "$serial" ] && echo "  Série: $serial"
 
             # État de santé
             health=$($SMARTCTL -H "$disk" 2>/dev/null | grep -E "SMART overall-health|SMART Health Status" | cut -d: -f2 | xargs)
