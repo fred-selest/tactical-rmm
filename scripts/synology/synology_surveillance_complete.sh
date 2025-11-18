@@ -242,12 +242,21 @@ if command -v docker &> /dev/null; then
     running=$(docker ps -q 2>/dev/null | wc -l)
     total=$(docker ps -aq 2>/dev/null | wc -l)
     echo "[OK] Docker: $running/$total conteneurs actifs"
+    echo ""
 
-    # Conteneurs arrêtés
-    stopped=$(docker ps -a --filter "status=exited" --format "{{.Names}}" 2>/dev/null)
-    if [ -n "$stopped" ]; then
-        echo "[INFO] Conteneurs arrêtés: $(echo "$stopped" | tr '\n' ', ')"
-    fi
+    # Liste de tous les conteneurs
+    echo "--- Liste des conteneurs ---"
+    docker ps -a --format "{{.Names}}|{{.Status}}|{{.Image}}" 2>/dev/null | while read line; do
+        name=$(echo "$line" | cut -d'|' -f1)
+        status=$(echo "$line" | cut -d'|' -f2)
+        image=$(echo "$line" | cut -d'|' -f3)
+
+        if echo "$status" | grep -q "Up"; then
+            echo "  [OK] $name ($image)"
+        else
+            echo "  [ARRÊT] $name ($image)"
+        fi
+    done
 fi
 
 echo ""
