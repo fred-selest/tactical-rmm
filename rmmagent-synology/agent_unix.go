@@ -459,6 +459,21 @@ func (a *Agent) GetWMIInfo() map[string]interface{} {
 			ips = append(ips, ip)
 		}
 	}
+	// Synology fallback: use ip addr if gopsutil returns empty
+	if len(ips) == 0 && trmm.FileExists("/etc/synoinfo.conf") {
+		opts := a.NewCMDOpts()
+		opts.Command = "ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}'"
+		out := a.CmdV2(opts)
+		if out.Status.Exit == 0 {
+			lines := strings.Split(strings.TrimSpace(out.Stdout), "\n")
+			for _, line := range lines {
+				ip := strings.TrimSpace(line)
+				if ip != "" {
+					ips = append(ips, ip)
+				}
+			}
+		}
+	}
 	wmiInfo["local_ips"] = ips
 
 	// disks
