@@ -459,6 +459,21 @@ func (a *Agent) GetWMIInfo() map[string]interface{} {
 			ips = append(ips, ip)
 		}
 	}
+	// Synology fallback: use ip addr if gopsutil returns empty
+	if len(ips) == 0 && trmm.FileExists("/etc/synoinfo.conf") {
+		opts := a.NewCMDOpts()
+		opts.Command = "ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}'"
+		out := a.CmdV2(opts)
+		if out.Status.Exit == 0 {
+			lines := strings.Split(strings.TrimSpace(out.Stdout), "\n")
+			for _, line := range lines {
+				ip := strings.TrimSpace(line)
+				if ip != "" {
+					ips = append(ips, ip)
+				}
+			}
+		}
+	}
 	wmiInfo["local_ips"] = ips
 
 	// disks
@@ -474,6 +489,8 @@ func (a *Agent) GetWMIInfo() map[string]interface{} {
 			vendor := disk.Vendor
 			model := disk.Model
 			serial := ""
+			storageController := disk.StorageController.String()
+			driveType := disk.DriveType.String()
 
 			// Synology-specific: use smartctl to get better disk info
 			if trmm.FileExists("/etc/synoinfo.conf") && (vendor == "unknown" || vendor == "Unknown" || vendor == "" || model == "unknown" || model == "Unknown" || model == "") {
@@ -484,7 +501,7 @@ func (a *Agent) GetWMIInfo() map[string]interface{} {
 				if out.Status.Exit == 0 {
 					lines := strings.Split(out.Stdout, "\n")
 					for _, line := range lines {
-						if strings.Contains(line, "Device Model:") || strings.Contains(line, "Model Family:") || strings.Contains(line, "Product:") {
+						if strings.Contains(line, "Device Model:") || strings.Contains(line, "Product:") {
 							parts := strings.SplitN(line, ":", 2)
 							if len(parts) == 2 {
 								model = strings.TrimSpace(parts[1])
@@ -502,15 +519,36 @@ func (a *Agent) GetWMIInfo() map[string]interface{} {
 								vendor = strings.TrimSpace(parts[1])
 							}
 						}
+						// Detect HDD vs SSD
+						if strings.Contains(line, "Rotation Rate:") {
+							parts := strings.SplitN(line, ":", 2)
+							if len(parts) == 2 {
+								rate := strings.TrimSpace(parts[1])
+								if strings.Contains(rate, "Solid State") {
+									driveType = "SSD"
+								} else if strings.Contains(rate, "rpm") {
+									driveType = "HDD"
+								}
+							}
+						}
+						// Detect SATA
+						if strings.Contains(line, "SATA Version is:") {
+							storageController = "SATA"
+						}
 					}
+				}
+				// Detect SATA from disk name
+				if strings.HasPrefix(disk.Name, "sata") && (storageController == "Unknown" || storageController == "unknown") {
+					storageController = "SATA"
 				}
 			}
 
-			ret := fmt.Sprintf("%s %s %s %s %s %s", vendor, model, disk.StorageController, disk.DriveType, disk.Name, ByteCountSI(disk.SizeBytes))
+			ret := fmt.Sprintf("%s %s %s %s %s %s", vendor, model, storageController, driveType, disk.Name, ByteCountSI(disk.SizeBytes))
 			if serial != "" {
-				ret = fmt.Sprintf("%s %s %s %s %s %s (S/N: %s)", vendor, model, disk.StorageController, disk.DriveType, disk.Name, ByteCountSI(disk.SizeBytes), serial)
+				ret = fmt.Sprintf("%s %s %s %s %s %s (S/N: %s)", vendor, model, storageController, driveType, disk.Name, ByteCountSI(disk.SizeBytes), serial)
 			}
 			ret = strings.TrimSpace(strings.ReplaceAll(ret, "unknown", ""))
+			ret = strings.TrimSpace(strings.ReplaceAll(ret, "Unknown", ""))
 			disks = append(disks, ret)
 		}
 	}
