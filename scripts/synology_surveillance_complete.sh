@@ -237,10 +237,8 @@ if [ -f /etc/synoautoblock.db ]; then
     if [ "${blocked:-0}" -gt 0 ]; then
         echo ""
         echo "--- Liste des IPs bloquées ---"
-        sqlite3 /etc/synoautoblock.db "SELECT IP, Deny FROM AutoBlockIP ORDER BY Deny DESC LIMIT 10;" 2>/dev/null | while read line; do
-            ip=$(echo "$line" | cut -d'|' -f1)
-            date_block=$(echo "$line" | cut -d'|' -f2)
-            echo "  $ip (bloquée le $date_block)"
+        sqlite3 /etc/synoautoblock.db "SELECT IP FROM AutoBlockIP ORDER BY rowid DESC LIMIT 10;" 2>/dev/null | while read ip; do
+            echo "  - $ip"
         done
     fi
 fi
