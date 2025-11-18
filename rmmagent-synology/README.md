@@ -19,52 +19,65 @@ La fonction `GetWMIInfo()` a été modifiée pour :
 
 ## Installation sur Synology
 
-### 1. Arrêter l'agent actuel
+**IMPORTANT** : L'agent doit être installé sur `/volume1` pour éviter de remplir la partition système `/dev/md0` (seulement 2.3 Go).
+
+### 1. Arrêter l'agent actuel (si existant)
 
 ```bash
-/usr/local/bin/rmmagent -m rpc stop
+/usr/local/bin/rmmagent -m rpc stop 2>/dev/null
 ```
 
-### 2. Sauvegarder l'agent original
+### 2. Créer le dossier sur /volume1
 
 ```bash
-cp /usr/local/bin/rmmagent /usr/local/bin/rmmagent.original
+mkdir -p /volume1/rmmagent
 ```
 
-### 3. Copier le nouvel agent
-
-Depuis votre poste :
+### 3. Télécharger l'agent sur /volume1
 
 ```bash
-scp rmmagent-synology root@<IP_NAS>:/usr/local/bin/rmmagent
+wget -O /volume1/rmmagent/rmmagent https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/rmmagent-synology/rmmagent-synology
+chmod +x /volume1/rmmagent/rmmagent
 ```
 
-Ou directement sur le NAS :
+### 4. Créer le lien symbolique
 
 ```bash
-wget -O /usr/local/bin/rmmagent https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/rmmagent-synology/rmmagent-synology
-chmod +x /usr/local/bin/rmmagent
+# Supprimer l'ancien agent si présent
+rm -f /usr/local/bin/rmmagent
+
+# Créer le lien symbolique
+ln -s /volume1/rmmagent/rmmagent /usr/local/bin/rmmagent
 ```
 
-### 4. Redémarrer l'agent
+### 5. Démarrer l'agent
 
 ```bash
 /usr/local/bin/rmmagent -m rpc start
 ```
 
-### 5. Vérifier
+### 6. Vérifier
 
 Dans Tactical RMM :
 1. Sélectionner l'agent Synology
 2. Aller dans **Inventory** > **Hardware Details**
 3. Les disques devraient maintenant afficher le modèle et le numéro de série
 
+## Mise à jour de l'agent
+
+```bash
+/usr/local/bin/rmmagent -m rpc stop
+wget -O /volume1/rmmagent/rmmagent https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/rmmagent-synology/rmmagent-synology
+chmod +x /volume1/rmmagent/rmmagent
+/usr/local/bin/rmmagent -m rpc start
+```
+
 ## Restaurer l'agent original
 
 ```bash
 /usr/local/bin/rmmagent -m rpc stop
-cp /usr/local/bin/rmmagent.original /usr/local/bin/rmmagent
-/usr/local/bin/rmmagent -m rpc start
+rm -f /usr/local/bin/rmmagent /volume1/rmmagent/rmmagent
+# Réinstaller l'agent officiel via LinuxRMM-Script
 ```
 
 ## Compilation depuis les sources
