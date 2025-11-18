@@ -150,7 +150,7 @@ IPs bloquées: 2
 
 --- Liste des IPs bloquées ---
   - 192.168.10.16
-  - plesk.selest.info
+  - plesk.votredomaine.com
 
 ========================================
 RÉSULTAT: Tout est OK

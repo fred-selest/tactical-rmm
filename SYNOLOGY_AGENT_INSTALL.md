@@ -89,7 +89,7 @@ chmod +x rmmagent-linux.sh
   server
 ```
 
-## Exemple complet avec selest.info
+## Exemple complet avec votredomaine.com
 
 ```bash
 sudo -i
@@ -98,8 +98,8 @@ wget https://raw.githubusercontent.com/netvolt/LinuxRMM-Script/main/rmmagent-lin
 chmod +x rmmagent-linux.sh
 
 ./rmmagent-linux.sh install \
-  'https://mesh.selest.info/meshagents?id=6' \
-  'https://api.selest.info' \
+  'https://mesh.votredomaine.com/meshagents?id=6' \
+  'https://api.votredomaine.com' \
   1 \
   1 \
   '4ea7263d94c4973655c25c62e94663f2505656e98fb586b63ef3be30995f04ab' \
