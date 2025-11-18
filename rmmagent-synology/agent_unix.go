@@ -578,6 +578,59 @@ func (a *Agent) GetWMIInfo() map[string]interface{} {
 		}
 	}
 
+	// Synology-specific: get actual model and DSM version
+	if trmm.FileExists("/etc/synoinfo.conf") {
+		opts := a.NewCMDOpts()
+		opts.Command = "grep -E '^upnpmodelname=|^majorversion=|^minorversion=|^buildnumber=' /etc/synoinfo.conf /etc.defaults/VERSION 2>/dev/null"
+		out := a.CmdV2(opts)
+		if out.Status.Exit == 0 {
+			model := ""
+			major := ""
+			minor := ""
+			build := ""
+			for _, line := range strings.Split(out.Stdout, "\n") {
+				if strings.Contains(line, "upnpmodelname=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						model = strings.Trim(parts[1], "\"")
+					}
+				}
+				if strings.Contains(line, "majorversion=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						major = strings.Trim(parts[1], "\"")
+					}
+				}
+				if strings.Contains(line, "minorversion=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						minor = strings.Trim(parts[1], "\"")
+					}
+				}
+				if strings.Contains(line, "buildnumber=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						build = strings.Trim(parts[1], "\"")
+					}
+				}
+			}
+			if model != "" {
+				dsm := ""
+				if major != "" && minor != "" {
+					dsm = fmt.Sprintf("DSM %s.%s", major, minor)
+					if build != "" {
+						dsm = fmt.Sprintf("%s-%s", dsm, build)
+					}
+				}
+				if dsm != "" {
+					wmiInfo["make_model"] = fmt.Sprintf("Synology %s (%s)", model, dsm)
+				} else {
+					wmiInfo["make_model"] = fmt.Sprintf("Synology %s", model)
+				}
+			}
+		}
+	}
+
 	if runtime.GOOS == "darwin" {
 		opts := a.NewCMDOpts()
 		opts.Command = "sysctl hw.model"
@@ -625,6 +678,18 @@ func (a *Agent) GetWMIInfo() map[string]interface{} {
 			wmiInfo["serialnumber"] = "n/a"
 		} else {
 			wmiInfo["serialnumber"] = baseboard.SerialNumber
+		}
+		// Synology fallback: use syno_serial if baseboard returns generic value
+		if trmm.FileExists("/etc/synoinfo.conf") {
+			serial := wmiInfo["serialnumber"].(string)
+			if serial == "n/a" || serial == "123456789" || serial == "Default string" || serial == "" {
+				opts := a.NewCMDOpts()
+				opts.Command = "cat /proc/sys/kernel/syno_serial"
+				out := a.CmdV2(opts)
+				if out.Status.Exit == 0 && strings.TrimSpace(out.Stdout) != "" {
+					wmiInfo["serialnumber"] = strings.TrimSpace(out.Stdout)
+				}
+			}
 		}
 	case "darwin":
 		opts := a.NewCMDOpts()
