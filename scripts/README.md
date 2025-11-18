@@ -8,9 +8,44 @@ Scripts pour surveiller et gérer des serveurs via Tactical RMM.
 scripts/
 ├── plesk/           # Scripts Bash pour serveurs Plesk
 ├── synology/        # Scripts Bash pour NAS Synology
+├── windows/         # Scripts PowerShell pour Windows Server
 ├── activedirectory/ # Scripts PowerShell pour Active Directory
+├── veeam/           # Scripts PowerShell pour Veeam Backup
+├── eset/            # Scripts PowerShell pour ESET Endpoint
 └── README.md
 ```
+
+## Scripts Windows Server
+
+Scripts PowerShell pour surveiller les serveurs Windows.
+
+| Script | Description |
+|--------|-------------|
+| `windows_surveillance_complete.ps1` | Surveillance complète (CPU, RAM, disques, services, événements, certificats) |
+
+Voir [windows/README.md](windows/README.md) pour la documentation complète.
+
+## Scripts Veeam Backup
+
+Scripts PowerShell pour surveiller Veeam Backup & Replication.
+
+| Script | Description |
+|--------|-------------|
+| `veeam_check_backups.ps1` | État des jobs, repositories, sessions |
+
+Voir [veeam/README.md](veeam/README.md) pour la documentation complète.
+
+## Scripts ESET Endpoint
+
+Scripts PowerShell pour ESET Endpoint Security/Antivirus.
+
+| Script | Description |
+|--------|-------------|
+| `eset_check_status.ps1` | État de protection, mises à jour, menaces |
+| `eset_force_update.ps1` | Forcer la mise à jour des signatures |
+| `eset_run_scan.ps1` | Lancer une analyse (rapide, complète, personnalisée) |
+
+Voir [eset/README.md](eset/README.md) pour la documentation complète.
 
 ## Scripts Active Directory
 
@@ -57,6 +92,7 @@ Voir [activedirectory/README.md](activedirectory/README.md) pour la documentatio
 | `synology_check_services.sh` | Paquets installés, Docker, connexions |
 | `synology_check_backup.sh` | Hyper Backup, Snapshot Replication |
 | `synology_check_security.sh` | Blocages IP, connexions, mises à jour DSM |
+| `synology_check_hyperbackup.sh` | **Nouveau** - Surveillance détaillée Hyper Backup |
 
 ## Installation dans Tactical RMM
 
