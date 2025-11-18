@@ -581,7 +581,7 @@ func (a *Agent) GetWMIInfo() map[string]interface{} {
 	// Synology-specific: get actual model and DSM version
 	if trmm.FileExists("/etc/synoinfo.conf") {
 		opts := a.NewCMDOpts()
-		opts.Command = "grep -E '^upnpmodelname=|^majorversion=|^minorversion=|^buildnumber=' /etc/synoinfo.conf /etc.defaults/VERSION 2>/dev/null"
+		opts.Command = "grep -hE 'upnpmodelname=|majorversion=|minorversion=|buildnumber=' /etc/synoinfo.conf /etc.defaults/VERSION 2>/dev/null"
 		out := a.CmdV2(opts)
 		if out.Status.Exit == 0 {
 			model := ""
