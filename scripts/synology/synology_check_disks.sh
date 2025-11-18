@@ -17,28 +17,47 @@ fi
 echo "--- Informations disques ---"
 echo ""
 
-# Utiliser les fichiers système Synology pour lister les disques
-for disk_path in /sys/block/sd*; do
-    if [ -d "$disk_path" ]; then
-        disk_name=$(basename "$disk_path")
+# Trouver smartctl
+SMARTCTL=""
+if command -v smartctl &> /dev/null; then
+    SMARTCTL="smartctl"
+elif [ -x /usr/syno/bin/smartctl ]; then
+    SMARTCTL="/usr/syno/bin/smartctl"
+elif [ -x /usr/bin/smartctl ]; then
+    SMARTCTL="/usr/bin/smartctl"
+fi
+
+# Trouver les disques - plusieurs méthodes
+DISKS=""
+
+# Méthode 1: lsblk
+if command -v lsblk &> /dev/null; then
+    DISKS=$(lsblk -d -n -o NAME 2>/dev/null | grep -E "^sd|^sata|^nvme")
+fi
+
+# Méthode 2: /dev
+if [ -z "$DISKS" ]; then
+    DISKS=$(ls /dev/sd[a-z] /dev/sata[0-9] /dev/nvme[0-9]n[0-9] 2>/dev/null | xargs -n1 basename 2>/dev/null)
+fi
+
+# Méthode 3: /sys/block
+if [ -z "$DISKS" ]; then
+    DISKS=$(ls /sys/block/ 2>/dev/null | grep -E "^sd|^sata|^nvme")
+fi
+
+# Parcourir les disques trouvés
+if [ -n "$DISKS" ]; then
+    for disk_name in $DISKS; do
         disk="/dev/$disk_name"
 
         if [ -b "$disk" ]; then
             echo "Disque: $disk_name"
 
-            # Utiliser smartctl avec chemin complet si nécessaire
-            SMARTCTL=""
-            if command -v smartctl &> /dev/null; then
-                SMARTCTL="smartctl"
-            elif [ -x /usr/syno/bin/smartctl ]; then
-                SMARTCTL="/usr/syno/bin/smartctl"
-            fi
-
             if [ -n "$SMARTCTL" ]; then
                 # Informations SMART
                 smart_info=$($SMARTCTL -i "$disk" 2>/dev/null)
-                model=$(echo "$smart_info" | grep -E "Device Model|Model Family" | head -1 | cut -d: -f2 | xargs)
-                serial=$(echo "$smart_info" | grep "Serial Number" | cut -d: -f2 | xargs)
+                model=$(echo "$smart_info" | grep -E "Device Model|Model Family|Product:" | head -1 | cut -d: -f2 | xargs)
+                serial=$(echo "$smart_info" | grep -E "Serial Number|Serial number:" | head -1 | cut -d: -f2 | xargs)
 
                 [ -n "$model" ] && echo "  Modèle: $model"
                 [ -n "$serial" ] && echo "  Série: $serial"
@@ -56,7 +75,11 @@ for disk_path in /sys/block/sd*; do
                 fi
 
                 # Température
-                temp=$($SMARTCTL -A "$disk" 2>/dev/null | grep -E "Temperature_Celsius|Airflow_Temperature" | head -1 | awk '{print $10}')
+                temp=$($SMARTCTL -A "$disk" 2>/dev/null | grep -E "Temperature_Celsius|Airflow_Temperature|Temperature:" | head -1 | awk '{print $10}')
+                # Alternative pour certains disques
+                if [ -z "$temp" ]; then
+                    temp=$($SMARTCTL -A "$disk" 2>/dev/null | grep "Current Drive Temperature" | awk '{print $4}')
+                fi
 
                 if [ -n "$temp" ] && [ "$temp" -gt 0 ] 2>/dev/null; then
                     if [ "$temp" -gt "$TEMP_MAX" ]; then
@@ -80,36 +103,31 @@ for disk_path in /sys/block/sd*; do
                     echo "  [ALERTE] Secteurs en attente: $pending"
                     ERREUR=1
                 fi
-            else
-                echo "  [INFO] smartctl non disponible"
             fi
 
             # Taille du disque
-            size_bytes=$(cat /sys/block/$disk_name/size 2>/dev/null)
-            if [ -n "$size_bytes" ]; then
-                size_gb=$((size_bytes * 512 / 1024 / 1024 / 1024))
-                echo "  Taille: ${size_gb} Go"
+            if [ -f "/sys/block/$disk_name/size" ]; then
+                size_sectors=$(cat /sys/block/$disk_name/size 2>/dev/null)
+                if [ -n "$size_sectors" ]; then
+                    size_gb=$((size_sectors * 512 / 1024 / 1024 / 1024))
+                    echo "  Taille: ${size_gb} Go"
+                fi
             fi
 
             echo ""
         fi
-    fi
-done
-
-# Alternative : utiliser les logs système Synology
-echo "--- État via DSM ---"
-
-# Vérifier les alertes disques dans les logs
-if [ -f /var/log/synolog/synobackup.log ]; then
-    recent_errors=$(grep -i "error\|failed\|bad" /var/log/synolog/synobackup.log 2>/dev/null | tail -3)
-    if [ -n "$recent_errors" ]; then
-        echo "[INFO] Erreurs récentes dans les logs"
-    fi
+    done
+else
+    echo "[INFO] Aucun disque détecté via les méthodes standard"
+    echo ""
+    echo "Périphériques bloc disponibles:"
+    ls /sys/block/ 2>/dev/null
 fi
 
-# Afficher l'état des disques via /proc
-echo ""
+# Statistiques E/S
 echo "--- Statistiques E/S ---"
-cat /proc/diskstats 2>/dev/null | grep -E "sd[a-z] " | awk '{print $3": "$4" lectures, "$8" écritures"}'
+if [ -f /proc/diskstats ]; then
+    cat /proc/diskstats 2>/dev/null | grep -E "sd[a-z] |sata[0-9] |nvme" | awk '{print $3": "$4" lectures, "$8" écritures"}'
+fi
 
 exit $ERREUR
