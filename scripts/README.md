@@ -1,15 +1,34 @@
 # Scripts de surveillance pour Tactical RMM
 
-Scripts Bash pour surveiller des serveurs Plesk et NAS Synology via Tactical RMM.
+Scripts pour surveiller et gérer des serveurs via Tactical RMM.
 
 ## Structure
 
 ```
 scripts/
-├── plesk/           # Scripts pour serveurs Plesk
-├── synology/        # Scripts pour NAS Synology
+├── plesk/           # Scripts Bash pour serveurs Plesk
+├── synology/        # Scripts Bash pour NAS Synology
+├── activedirectory/ # Scripts PowerShell pour Active Directory
 └── README.md
 ```
+
+## Scripts Active Directory
+
+Scripts PowerShell pour gérer Active Directory depuis le contrôleur de domaine.
+
+| Script | Description |
+|--------|-------------|
+| `ad_create_user.ps1` | Créer un utilisateur |
+| `ad_disable_user.ps1` | Désactiver un compte |
+| `ad_reset_password.ps1` | Réinitialiser un mot de passe |
+| `ad_unlock_account.ps1` | Déverrouiller un compte |
+| `ad_delete_user.ps1` | Supprimer un utilisateur |
+| `ad_list_users.ps1` | Lister les utilisateurs |
+| `ad_add_to_group.ps1` | Ajouter à un groupe |
+| `ad_create_group.ps1` | Créer un groupe |
+| `ad_inventory.ps1` | Inventaire complet AD |
+
+Voir [activedirectory/README.md](activedirectory/README.md) pour la documentation complète.
 
 ## Scripts Plesk
 
