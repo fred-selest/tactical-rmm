@@ -12,8 +12,21 @@ scripts/
 ├── activedirectory/ # Scripts PowerShell pour Active Directory
 ├── veeam/           # Scripts PowerShell pour Veeam Backup
 ├── eset/            # Scripts PowerShell pour ESET Endpoint
+├── omada/           # Scripts PowerShell pour TP-Link Omada
 └── README.md
 ```
+
+## Scripts TP-Link Omada
+
+Scripts PowerShell pour surveiller et gérer les équipements Omada (WiFi, Switches, Gateways).
+
+| Script | Description |
+|--------|-------------|
+| `omada_check_status.ps1` | Surveillance complète du réseau |
+| `omada_list_clients.ps1` | Liste des clients connectés |
+| `omada_reboot_device.ps1` | Redémarrer un équipement |
+
+Voir [omada/README.md](omada/README.md) pour la documentation complète.
 
 ## Scripts Windows Server
 
