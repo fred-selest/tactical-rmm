@@ -1,0 +1,369 @@
+"""
+Vues Django pour l'intégration de déploiement Linux
+À intégrer dans: api/tacticalrmm/clients/views.py
+"""
+import uuid
+from datetime import timedelta
+from django.utils import timezone
+from django.http import HttpResponse, JsonResponse, Http404
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+
+from .models import LinuxDeployment, DeploymentLog
+from .serializers import LinuxDeploymentSerializer
+
+
+class LinuxDeploymentCreateView(APIView):
+    """
+    Crée un nouveau déploiement Linux
+    POST /api/v3/linux-deployments/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """
+        Crée un nouveau lien de déploiement Linux
+
+        Body:
+        {
+            "client_id": 123,
+            "client_name": "Nom Client",
+            "site_id": 456,
+            "site_name": "Nom Site",
+            "agent_type": "server",  # ou "workstation"
+            "arch": "amd64",  # ou "arm64", "386"
+            "expires_days": 30,  # optionnel, défaut: 30
+            "enable_ping": true,
+            "enable_rdp": false,
+            "install_mesh": true,
+            "custom_script_url": ""  # optionnel
+        }
+        """
+        data = request.data
+
+        # Valider les données requises
+        required_fields = ['client_id', 'client_name', 'site_id', 'site_name']
+        for field in required_fields:
+            if field not in data:
+                return Response(
+                    {'error': f'Le champ {field} est requis'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Calculer la date d'expiration
+        expires_days = data.get('expires_days', 30)
+        expires_at = timezone.now() + timedelta(days=expires_days)
+
+        # Récupérer l'URL de l'API depuis les settings
+        api_url = request.build_absolute_uri('/').rstrip('/')
+
+        # Récupérer l'URL Mesh depuis la configuration (à adapter)
+        mesh_url = data.get('mesh_url', 'https://mesh.votredomaine.com/meshagents?id=...')
+
+        # Générer une clé d'authentification unique
+        auth_key = uuid.uuid4().hex
+
+        # Créer le déploiement
+        deployment = LinuxDeployment.objects.create(
+            client_id=data['client_id'],
+            client_name=data['client_name'],
+            site_id=data['site_id'],
+            site_name=data['site_name'],
+            agent_type=data.get('agent_type', 'server'),
+            arch=data.get('arch', 'amd64'),
+            api_url=api_url,
+            mesh_url=mesh_url,
+            auth_key=auth_key,
+            enable_ping=data.get('enable_ping', True),
+            enable_rdp=data.get('enable_rdp', False),
+            install_mesh=data.get('install_mesh', True),
+            custom_script_url=data.get('custom_script_url', ''),
+            expires_at=expires_at,
+            created_by=request.user.username
+        )
+
+        # Créer un log
+        DeploymentLog.objects.create(
+            deployment=deployment,
+            action='created',
+            ip_address=self.get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+
+        serializer = LinuxDeploymentSerializer(deployment, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def get_client_ip(self, request):
+        """Récupère l'IP du client"""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+
+
+class LinuxDeploymentListView(APIView):
+    """
+    Liste tous les déploiements Linux
+    GET /api/v3/linux-deployments/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        deployments = LinuxDeployment.objects.all()
+
+        # Filtrage optionnel
+        client_id = request.query_params.get('client_id')
+        if client_id:
+            deployments = deployments.filter(client_id=client_id)
+
+        site_id = request.query_params.get('site_id')
+        if site_id:
+            deployments = deployments.filter(site_id=site_id)
+
+        serializer = LinuxDeploymentSerializer(deployments, many=True, context={'request': request})
+        return Response(serializer.data)
+
+
+class LinuxDeploymentDetailView(APIView):
+    """
+    Détails d'un déploiement Linux
+    GET /api/v3/linux-deployments/{uuid}/
+    DELETE /api/v3/linux-deployments/{uuid}/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, deployment_uuid):
+        try:
+            deployment = LinuxDeployment.objects.get(uuid=deployment_uuid)
+            serializer = LinuxDeploymentSerializer(deployment, context={'request': request})
+            return Response(serializer.data)
+        except LinuxDeployment.DoesNotExist:
+            raise Http404("Déploiement non trouvé")
+
+    def delete(self, request, deployment_uuid):
+        try:
+            deployment = LinuxDeployment.objects.get(uuid=deployment_uuid)
+            deployment.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except LinuxDeployment.DoesNotExist:
+            raise Http404("Déploiement non trouvé")
+
+
+class LinuxDeploymentScriptView(APIView):
+    """
+    Télécharge le script d'installation Linux pré-configuré
+    GET /clients/{uuid}/deploy/linux/
+
+    Cette URL est publique (pas d'authentification) car utilisée pour le déploiement
+    """
+    permission_classes = []  # Pas d'authentification requise
+
+    def get(self, request, deployment_uuid):
+        try:
+            deployment = LinuxDeployment.objects.get(uuid=deployment_uuid)
+        except LinuxDeployment.DoesNotExist:
+            return HttpResponse("Déploiement non trouvé ou expiré", status=404)
+
+        # Vérifier l'expiration
+        if deployment.is_expired():
+            return HttpResponse("Ce lien de déploiement a expiré", status=410)
+
+        # Incrémenter le compteur de téléchargements
+        deployment.increment_download()
+
+        # Logger le téléchargement
+        DeploymentLog.objects.create(
+            deployment=deployment,
+            action='downloaded',
+            ip_address=self.get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+
+        # Générer le script
+        script = self.generate_install_script(deployment)
+
+        # Retourner le script
+        response = HttpResponse(script, content_type='text/x-shellscript')
+        response['Content-Disposition'] = f'attachment; filename="install-rmm-agent-{deployment.uuid}.sh"'
+        return response
+
+    def generate_install_script(self, deployment):
+        """Génère le script d'installation avec les paramètres pré-configurés"""
+
+        # URL du script de base
+        base_script_url = deployment.get_script_url()
+
+        script = f"""#!/bin/bash
+#
+# Script d'installation automatique de l'agent Tactical RMM pour Linux
+# Généré automatiquement - Ne pas modifier
+#
+# Client: {deployment.client_name}
+# Site: {deployment.site_name}
+# Type: {deployment.agent_type}
+# Architecture: {deployment.arch}
+# Date d'expiration: {deployment.expires_at.strftime('%Y-%m-%d %H:%M:%S')}
+#
+
+set -e
+
+# Couleurs pour les messages
+RED='\\033[0;31m'
+GREEN='\\033[0;32m'
+YELLOW='\\033[1;33m'
+NC='\\033[0m' # No Color
+
+echo -e "${{GREEN}}========================================${{NC}}"
+echo -e "${{GREEN}}Installation de l'agent Tactical RMM${{NC}}"
+echo -e "${{GREEN}}========================================${{NC}}"
+echo ""
+echo "Client: {deployment.client_name}"
+echo "Site: {deployment.site_name}"
+echo "Type: {deployment.agent_type}"
+echo ""
+
+# Vérifier les privilèges root
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${{RED}}Ce script doit être exécuté en tant que root${{NC}}"
+    echo "Utilisez: sudo $0"
+    exit 1
+fi
+
+# Télécharger le script d'installation de base
+echo -e "${{YELLOW}}Téléchargement du script d'installation...${{NC}}"
+wget -q "{base_script_url}" -O /tmp/rmmagent-install.sh
+
+if [ ! -f /tmp/rmmagent-install.sh ]; then
+    echo -e "${{RED}}Erreur: Impossible de télécharger le script d'installation${{NC}}"
+    exit 1
+fi
+
+chmod +x /tmp/rmmagent-install.sh
+
+# Exécuter l'installation avec les paramètres pré-configurés
+echo -e "${{YELLOW}}Installation de l'agent...${{NC}}"
+
+/tmp/rmmagent-install.sh install \\
+    "{deployment.mesh_url}" \\
+    "{deployment.api_url}" \\
+    {deployment.client_id} \\
+    {deployment.site_id} \\
+    "{deployment.auth_key}" \\
+    "{deployment.agent_type}"
+
+INSTALL_STATUS=$?
+
+# Notifier le serveur du résultat
+if [ $INSTALL_STATUS -eq 0 ]; then
+    echo -e "${{GREEN}}Installation terminée avec succès !${{NC}}"
+
+    # Envoyer une notification de succès au serveur (optionnel)
+    HOSTNAME=$(hostname)
+    curl -s -X POST "{deployment.api_url}/api/v3/linux-deployments/{deployment.uuid}/installed/" \\
+        -H "Content-Type: application/json" \\
+        -d '{{"hostname": "'$HOSTNAME'", "status": "success"}}' || true
+
+    echo ""
+    echo "L'agent devrait apparaître dans le dashboard dans quelques instants."
+    echo "Vérifiez dans: {deployment.client_name} > {deployment.site_name}"
+else
+    echo -e "${{RED}}Erreur lors de l'installation${{NC}}"
+
+    # Envoyer une notification d'erreur au serveur (optionnel)
+    HOSTNAME=$(hostname)
+    curl -s -X POST "{deployment.api_url}/api/v3/linux-deployments/{deployment.uuid}/installed/" \\
+        -H "Content-Type: application/json" \\
+        -d '{{"hostname": "'$HOSTNAME'", "status": "failed"}}' || true
+
+    exit 1
+fi
+
+# Nettoyage
+rm -f /tmp/rmmagent-install.sh
+
+echo ""
+echo -e "${{GREEN}}========================================${{NC}}"
+echo -e "${{GREEN}}Installation terminée${{NC}}"
+echo -e "${{GREEN}}========================================${{NC}}"
+"""
+        return script
+
+    def get_client_ip(self, request):
+        """Récupère l'IP du client"""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+
+
+class LinuxDeploymentInstallCallbackView(APIView):
+    """
+    Callback appelé par le script d'installation pour notifier le résultat
+    POST /api/v3/linux-deployments/{uuid}/installed/
+    """
+    permission_classes = []  # Pas d'authentification requise
+
+    def post(self, request, deployment_uuid):
+        try:
+            deployment = LinuxDeployment.objects.get(uuid=deployment_uuid)
+        except LinuxDeployment.DoesNotExist:
+            return Response({'error': 'Déploiement non trouvé'}, status=404)
+
+        data = request.data
+        hostname = data.get('hostname', 'unknown')
+        install_status = data.get('status', 'unknown')
+
+        # Incrémenter le compteur d'installations si succès
+        if install_status == 'success':
+            deployment.agents_installed += 1
+            deployment.save(update_fields=['agents_installed'])
+
+        # Logger l'installation
+        DeploymentLog.objects.create(
+            deployment=deployment,
+            action=f'installed_{install_status}',
+            ip_address=self.get_client_ip(request),
+            hostname=hostname,
+            error_message=data.get('error', '')
+        )
+
+        return Response({'status': 'logged'})
+
+    def get_client_ip(self, request):
+        """Récupère l'IP du client"""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+
+
+class LinuxDeploymentStatsView(APIView):
+    """
+    Statistiques des déploiements Linux
+    GET /api/v3/linux-deployments/stats/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        total_deployments = LinuxDeployment.objects.count()
+        active_deployments = LinuxDeployment.objects.filter(expires_at__gt=timezone.now()).count()
+        expired_deployments = LinuxDeployment.objects.filter(expires_at__lte=timezone.now()).count()
+        total_downloads = LinuxDeployment.objects.aggregate(models.Sum('download_count'))['download_count__sum'] or 0
+        total_installations = LinuxDeployment.objects.aggregate(models.Sum('agents_installed'))['agents_installed__sum'] or 0
+
+        return Response({
+            'total_deployments': total_deployments,
+            'active_deployments': active_deployments,
+            'expired_deployments': expired_deployments,
+            'total_downloads': total_downloads,
+            'total_installations': total_installations,
+            'success_rate': round((total_installations / total_downloads * 100) if total_downloads > 0 else 0, 2)
+        })
