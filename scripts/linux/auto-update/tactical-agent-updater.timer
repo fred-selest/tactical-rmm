@@ -1,0 +1,16 @@
+[Unit]
+Description=Tactical RMM Agent Auto-Update Timer
+Documentation=https://github.com/votre-user/tactical-rmm
+
+[Timer]
+# Exécuter tous les dimanches à 03:00 (pendant la fenêtre de maintenance)
+OnCalendar=Sun *-*-* 03:00:00
+
+# Décalage aléatoire de 0-30 minutes pour éviter que tous les agents se mettent à jour en même temps
+RandomizedDelaySec=1800
+
+# Si le système était éteint lors de la dernière exécution, rattraper au prochain démarrage
+Persistent=true
+
+[Install]
+WantedBy=timers.target
