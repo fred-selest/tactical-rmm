@@ -65,6 +65,11 @@ class LinuxDeploymentCreateView(APIView):
         # Générer une clé d'authentification unique
         auth_key = uuid.uuid4().hex
 
+        # Générer les tokens de sécurité
+        signing_token = LinuxDeployment.generate_signing_token()
+        one_time_token = LinuxDeployment.generate_one_time_token()
+        signature_secret = LinuxDeployment.generate_signature_secret()
+
         # Créer le déploiement
         deployment = LinuxDeployment.objects.create(
             client_id=data['client_id'],
@@ -76,6 +81,9 @@ class LinuxDeploymentCreateView(APIView):
             api_url=api_url,
             mesh_url=mesh_url,
             auth_key=auth_key,
+            signing_token=signing_token,
+            one_time_token=one_time_token,
+            signature_secret=signature_secret,
             enable_ping=data.get('enable_ping', True),
             enable_rdp=data.get('enable_rdp', False),
             install_mesh=data.get('install_mesh', True),
@@ -172,6 +180,35 @@ class LinuxDeploymentScriptView(APIView):
         if deployment.is_expired():
             return HttpResponse("Ce lien de déploiement a expiré", status=410)
 
+        # Validation de la signature HMAC (si fournie)
+        timestamp = request.GET.get('t')
+        signature = request.GET.get('sig')
+
+        if timestamp and signature:
+            # Vérifier la signature HMAC
+            data_to_sign = f"{deployment_uuid}:{timestamp}"
+            if not deployment.validate_signature(data_to_sign, signature):
+                DeploymentLog.objects.create(
+                    deployment=deployment,
+                    action='invalid_signature',
+                    ip_address=self.get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT', ''),
+                    error_message=f"Signature HMAC invalide: {signature}"
+                )
+                return HttpResponse("Signature invalide", status=403)
+
+            # Vérifier que le timestamp n'est pas trop ancien (max 1 heure)
+            from datetime import datetime
+            try:
+                ts = int(timestamp)
+                request_time = datetime.fromtimestamp(ts, tz=timezone.get_current_timezone())
+                age = (timezone.now() - request_time).total_seconds()
+
+                if age > 3600:  # 1 heure
+                    return HttpResponse("Lien expiré (timestamp trop ancien)", status=410)
+            except (ValueError, OSError):
+                return HttpResponse("Timestamp invalide", status=400)
+
         # Incrémenter le compteur de téléchargements
         deployment.increment_download()
 
@@ -261,11 +298,11 @@ INSTALL_STATUS=$?
 if [ $INSTALL_STATUS -eq 0 ]; then
     echo -e "${{GREEN}}Installation terminée avec succès !${{NC}}"
 
-    # Envoyer une notification de succès au serveur (optionnel)
+    # Envoyer une notification de succès au serveur avec one-time token
     HOSTNAME=$(hostname)
     curl -s -X POST "{deployment.api_url}/api/v3/linux-deployments/{deployment.uuid}/installed/" \\
         -H "Content-Type: application/json" \\
-        -d '{{"hostname": "'$HOSTNAME'", "status": "success"}}' || true
+        -d '{{"hostname": "'$HOSTNAME'", "status": "success", "one_time_token": "{deployment.one_time_token}"}}' || true
 
     echo ""
     echo "L'agent devrait apparaître dans le dashboard dans quelques instants."
@@ -273,11 +310,11 @@ if [ $INSTALL_STATUS -eq 0 ]; then
 else
     echo -e "${{RED}}Erreur lors de l'installation${{NC}}"
 
-    # Envoyer une notification d'erreur au serveur (optionnel)
+    # Envoyer une notification d'erreur au serveur avec one-time token
     HOSTNAME=$(hostname)
     curl -s -X POST "{deployment.api_url}/api/v3/linux-deployments/{deployment.uuid}/installed/" \\
         -H "Content-Type: application/json" \\
-        -d '{{"hostname": "'$HOSTNAME'", "status": "failed"}}' || true
+        -d '{{"hostname": "'$HOSTNAME'", "status": "failed", "one_time_token": "{deployment.one_time_token}"}}' || true
 
     exit 1
 fi
@@ -318,6 +355,39 @@ class LinuxDeploymentInstallCallbackView(APIView):
         data = request.data
         hostname = data.get('hostname', 'unknown')
         install_status = data.get('status', 'unknown')
+        one_time_token = data.get('one_time_token', '')
+
+        # Vérifier le one-time token si fourni (pour installations sécurisées)
+        if one_time_token:
+            # Vérifier que le token correspond
+            if one_time_token != deployment.one_time_token:
+                DeploymentLog.objects.create(
+                    deployment=deployment,
+                    action='invalid_token',
+                    ip_address=self.get_client_ip(request),
+                    hostname=hostname,
+                    error_message=f"One-time token invalide: {one_time_token[:10]}..."
+                )
+                return Response({'error': 'Token invalide'}, status=403)
+
+            # Vérifier que le token n'a pas déjà été utilisé
+            if deployment.token_used:
+                DeploymentLog.objects.create(
+                    deployment=deployment,
+                    action='token_already_used',
+                    ip_address=self.get_client_ip(request),
+                    hostname=hostname,
+                    error_message=f"Token déjà utilisé le {deployment.token_used_at}"
+                )
+                return Response({'error': 'Ce token a déjà été utilisé'}, status=410)
+
+            # Marquer le token comme utilisé (seulement si installation réussie)
+            if install_status == 'success':
+                try:
+                    deployment.use_one_time_token()
+                except ValueError as e:
+                    # Token déjà utilisé (race condition possible)
+                    return Response({'error': str(e)}, status=410)
 
         # Incrémenter le compteur d'installations si succès
         if install_status == 'success':
