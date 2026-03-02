@@ -1,8 +1,22 @@
-# Scripts Windows Server pour Tactical RMM
+# Scripts Windows pour Tactical RMM
 
-Scripts PowerShell pour surveiller les serveurs Windows.
+Scripts PowerShell pour installer, mettre à jour et surveiller des postes et serveurs Windows avec Tactical RMM.
 
 ## Scripts disponibles
+
+### Installation de l'agent
+
+Voir le répertoire [install/](install/) pour tous les scripts d'installation.
+
+| Script | Description |
+|--------|-------------|
+| `install/windows_agent_install.ps1` | Installation complète de l'agent |
+| `install/windows_agent_update.ps1` | Mise à jour avec rollback automatique |
+| `install/windows_agent_check.ps1` | Diagnostic complet de l'état de l'agent |
+| `install/windows_agent_deploy_gpo.ps1` | Déploiement via GPO / Active Directory |
+| `install/windows_agent_uninstall.ps1` | Désinstallation propre |
+
+### Surveillance du serveur
 
 | Script | Description |
 |--------|-------------|
