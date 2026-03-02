@@ -1,6 +1,28 @@
 # Tactical RMM - Scripts et documentation
 
-Dépôt complet pour l'installation, la surveillance et la gestion de Tactical RMM sur Linux, Windows, Synology et Plesk.
+Dépôt contenant des scripts de surveillance, l'intégration Dashboard Linux, et documentation pour Tactical RMM.
+
+## 🚀 NOUVEAU : Intégration Dashboard Linux
+
+**Installez des agents Linux directement depuis votre dashboard Tactical RMM !**
+
+### Installation en 1 commande
+
+```bash
+git clone https://github.com/fred-selest/tactical-rmm.git
+cd tactical-rmm
+sudo ./install-backend.sh
+```
+
+✅ Interface graphique pour créer des déploiements
+✅ URL unique générée automatiquement
+✅ Installation en une ligne sur le serveur Linux
+✅ Suivi des installations et statistiques
+
+**→ [Guide d'installation rapide (5 minutes)](QUICK_INSTALL.md)**
+**→ [Documentation complète](DASHBOARD_INTEGRATION_README.md)**
+
+---
 
 ## 🚀 Installation rapide (Nouveau !)
 
