@@ -1,0 +1,29 @@
+[Unit]
+Description=Tactical RMM Agent Updater
+Documentation=https://github.com/votre-user/tactical-rmm
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/tactical-agent-updater.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tactical-updater
+
+# Sécurité
+User=root
+Group=root
+
+# Protection
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log /etc/tacticalagent /var/run
+
+# Timeout (30 minutes max pour la mise à jour)
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target
