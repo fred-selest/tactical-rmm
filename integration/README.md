@@ -1,126 +1,197 @@
-# Intégration Dashboard - Installation Agent Linux pour Tactical RMM
+# 📦 Integration Package - Signing Tokens System
 
-Cette intégration permet de déployer des agents Linux depuis le dashboard de Tactical RMM, de manière native et transparente.
+> **Système de sécurité avancé pour les déploiements Linux de Tactical RMM**
+> **Prêt à intégrer dans votre installation**
 
 ## 🎯 Objectif
 
-Offrir une expérience d'installation d'agents Linux identique à celle des agents Windows, directement depuis l'interface web de Tactical RMM.
+Sécuriser les déploiements d'agents Linux avec une **triple couche de protection** :
 
-## ✨ Fonctionnalités
+1. **🔐 Signature HMAC-SHA256** - URLs non falsifiables
+2. **⏱️ Timestamps** - URLs expirant en 1 heure
+3. **🎫 One-Time Tokens** - Installation unique par déploiement
 
-- ✅ **Création de déploiements** depuis le dashboard web
-- ✅ **Configuration automatique** (client, site, type d'agent, architecture)
-- ✅ **Génération de commande** d'installation en une ligne
-- ✅ **Suivi des déploiements** (téléchargements, installations réussies)
-- ✅ **Expiration automatique** des liens de déploiement
-- ✅ **Support multi-architectures** (amd64, arm64, i386)
-- ✅ **Notifications** au serveur après installation
-- ✅ **Statistiques** en temps réel
-- ✅ **Interface d'administration** Django complète
+## ✨ Fonctionnalités de Sécurité
 
-## 📁 Structure du projet
+- ✅ **Signing Tokens** - HMAC-SHA256 pour URLs signées
+- ✅ **One-Time Tokens** - Prévention de réutilisation
+- ✅ **Signature Secrets** - Secrets serveur sécurisés
+- ✅ **Validation Timestamp** - Liens expirant en 1h
+- ✅ **Expiration Automatique** - Contrôle de durée de vie
+- ✅ **Logs d'Audit** - Traçabilité complète
+- ✅ **Protection Anti-Falsification** - Détection de modification
+- ✅ **Callback Sécurisé** - Validation après installation
+- ✅ **Interface Admin** - Gestion simplifiée
+
+## 📁 Structure du Package
 
 ```
 integration/
-├── backend/               # Code Django (API REST)
-│   ├── models.py         # Modèles de base de données
-│   ├── views.py          # Endpoints API
-│   ├── serializers.py    # Sérialiseurs REST
-│   ├── urls.py           # Configuration des routes
-│   ├── admin.py          # Interface d'administration
-│   └── README.md         # Documentation backend
+├── README.md                          # Ce fichier
 │
-├── frontend/             # Code Vue.js (Interface web)
-│   ├── LinuxDeploymentManager.vue    # Modal de création
-│   ├── LinuxDeploymentList.vue       # Liste des déploiements
-│   └── README.md                     # Documentation frontend
+├── backend/                           # Code backend Django
+│   ├── models.py                      # Modèle LinuxDeployment avec sécurité
+│   ├── views.py                       # Views pour script + callback
+│   ├── serializers.py                 # Serializers API REST
+│   ├── urls.py                        # Routes URL
+│   ├── admin.py                       # Interface admin Django
+│   └── migrations/                    # Migrations de base de données
+│       ├── __init__.py
+│       ├── 0001_initial.py           # Migration initiale
+│       ├── 0002_add_signing_tokens.py # Ajout signing tokens
+│       ├── 0003_add_deployment_log.py # Ajout logs de sécurité
+│       └── README.md                  # Guide des migrations
 │
-└── docs/                 # Documentation
-    ├── INTEGRATION_GUIDE.md          # Guide d'intégration complet
-    ├── API_REFERENCE.md              # Référence API
-    ├── USER_GUIDE.md                 # Guide utilisateur
-    └── ARCHITECTURE.md               # Architecture technique
+└── frontend/                          # Code frontend (React)
+    ├── components/
+    │   └── LinuxDeploymentButton.tsx  # Bouton "Create Linux Deployment"
+    └── README.md                       # Guide d'intégration frontend
 ```
 
-## 🚀 Installation rapide
+## 🚀 Installation Rapide
 
-### 1. Backend (Django)
+### Méthode 1 : Script Automatisé ⚡ (Recommandé)
 
 ```bash
-# Cloner le repository
-git clone https://github.com/fred-selest/tactical-rmm.git
-cd tactical-rmm/integration
-
-# Copier les fichiers backend
-cp -r backend/\* /opt/tacticalrmm/api/tacticalrmm/linux_deployments/
-
-# Créer les migrations
-cd /opt/tacticalrmm/api/tacticalrmm
-python manage.py makemigrations linux_deployments
-python manage.py migrate
+# Sur votre serveur Tactical RMM
+cd ~/tactical-rmm
+sudo ./deploy-signing-tokens.sh
 ```
 
-### 2. Frontend (Vue.js)
+**Ce script fait tout automatiquement :**
+- ✅ Vérification des prérequis
+- ✅ Sauvegarde de la base de données
+- ✅ Copie des fichiers backend
+- ✅ Application des migrations Django
+- ✅ Vérification de l'installation
+- ✅ Redémarrage des services
+- ✅ Tests de validation
+
+### Méthode 2 : Installation Manuelle
+
+#### Étape 1 : Copier les fichiers backend
 
 ```bash
-# Copier les composants
-cp integration/frontend/LinuxDeploymentManager.vue /path/to/tacticalrmm-web/src/components/modals/agents/
-cp integration/frontend/LinuxDeploymentList.vue /path/to/tacticalrmm-web/src/components/agents/
+# Se placer à la racine de Tactical RMM
+cd /rmm/api/tacticalrmm
 
-# Ajouter la route dans src/router/routes.js
-# (voir documentation complète)
+# Créer le répertoire linux_deployments
+mkdir -p linux_deployments
 
-# Build
-cd /path/to/tacticalrmm-web
-npm run build
+# Copier les fichiers depuis integration/backend/
+cp ~/tactical-rmm/integration/backend/models.py linux_deployments/
+cp ~/tactical-rmm/integration/backend/views.py linux_deployments/
+cp ~/tactical-rmm/integration/backend/serializers.py linux_deployments/
+cp ~/tactical-rmm/integration/backend/urls.py linux_deployments/
+cp ~/tactical-rmm/integration/backend/admin.py linux_deployments/
+
+# Copier les migrations
+cp -r ~/tactical-rmm/integration/backend/migrations linux_deployments/
+
+# Corriger les permissions
+chown -R tactical:tactical linux_deployments/
 ```
 
-### 3. Script d'installation
+#### Étape 2 : Appliquer les migrations
 
-Le script `rmmagent-linux-dashboard.sh` supporte deux modes :
-
-**Mode 1 : Via UUID (recommandé)**
 ```bash
-./rmmagent-linux-dashboard.sh install {uuid} {api_url}
+# En tant qu'utilisateur tactical
+sudo -u tactical /rmm/api/env/bin/python /rmm/api/tacticalrmm/manage.py makemigrations linux_deployments
+sudo -u tactical /rmm/api/env/bin/python /rmm/api/tacticalrmm/manage.py migrate linux_deployments
 ```
 
-**Mode 2 : Manuel (compatibilité)**
+#### Étape 3 : Vérifier l'installation
+
 ```bash
-./rmmagent-linux-dashboard.sh install {mesh_url} {api_url} {client_id} {site_id} {auth_key} {agent_type}
+sudo ./test-signing-tokens-live.sh
+```
+
+#### Étape 4 : Redémarrer le service
+
+```bash
+sudo systemctl restart rmm.service
 ```
 
 ## 📖 Documentation
 
-- **[Guide d'intégration complet](docs/INTEGRATION_GUIDE.md)** - Installation pas à pas
-- **[Référence API](docs/API_REFERENCE.md)** - Documentation des endpoints
-- **[Guide utilisateur](docs/USER_GUIDE.md)** - Utilisation du dashboard
-- **[Architecture](docs/ARCHITECTURE.md)** - Détails techniques
+### Documentation Technique
+- **[SIGNING_TOKENS_README.md](../SIGNING_TOKENS_README.md)** - Documentation complète du système
+- **[backend/migrations/README.md](backend/migrations/README.md)** - Guide des migrations Django
 
-## 🎬 Démarrage rapide
+### Guides Utilisateur
+- **[QUICK_START_SIGNING_TOKENS.md](../QUICK_START_SIGNING_TOKENS.md)** - Démarrage rapide (5 min)
+- **[GUIDE_UTILISATION_ADMIN_PRIVATE.md](../GUIDE_UTILISATION_ADMIN_PRIVATE.md)** - Guide admin complet
 
-### Pour l'administrateur
+### Scripts
+- **[deploy-signing-tokens.sh](../deploy-signing-tokens.sh)** - Script de déploiement automatisé
+- **[test-signing-tokens-live.sh](../test-signing-tokens-live.sh)** - Suite de tests complète
 
-1. Connectez-vous au dashboard Tactical RMM
-2. Allez dans **Agents** → **Installation Linux**
-3. Cliquez sur **Nouveau déploiement**
-4. Sélectionnez Client, Site, et configurez l'agent
-5. Copiez la commande d'installation générée
-6. Exécutez-la sur le serveur Linux cible
+## 🎬 Démarrage Rapide
 
-### Pour l'utilisateur final
+### 1. Installer le système (2 minutes)
 
 ```bash
-# Commande fournie par l'administrateur
-wget https://api.votredomaine.com/clients/{uuid}/deploy/linux/ -O install.sh
+cd ~/tactical-rmm
+sudo ./deploy-signing-tokens.sh
+```
+
+### 2. Créer un déploiement
+
+**Option A : Via Admin Django** (recommandé)
+
+1. Ouvrez https://api.selest.info/admin/
+2. Allez dans **Linux Deployments** → **Add Linux Deployment**
+3. Remplissez les champs (Client, Site, Agent Type, etc.)
+4. Cliquez **Save**
+
+✨ **Les 3 tokens sont générés automatiquement !**
+
+**Option B : Via Django Shell**
+
+```python
+sudo -u tactical /rmm/api/env/bin/python /rmm/api/tacticalrmm/manage.py shell
+
+from linux_deployments.models import LinuxDeployment
+from django.utils import timezone
+from datetime import timedelta
+
+deployment = LinuxDeployment.objects.create(
+    client_id=1,
+    client_name="Mon Client",
+    site_id=1,
+    site_name="Production",
+    agent_type="server",
+    arch="amd64",
+    api_url="https://api.selest.info",
+    mesh_url="https://mesh.selest.info",
+    auth_key="auto_key",
+    signing_token=LinuxDeployment.generate_signing_token(),
+    one_time_token=LinuxDeployment.generate_one_time_token(),
+    signature_secret=LinuxDeployment.generate_signature_secret(),
+    expires_at=timezone.now() + timedelta(days=30),
+    created_by="admin"
+)
+
+# Obtenir l'URL signée
+signed_url = deployment.get_signed_url()
+print(signed_url)
+```
+
+### 3. Installer sur un serveur Linux
+
+```bash
+# Sur le serveur cible
+wget "URL_SIGNÉE" -O install.sh
 chmod +x install.sh
 sudo ./install.sh
 ```
 
-Ou en une seule ligne :
-
-```bash
-curl -L https://api.votredomaine.com/clients/{uuid}/deploy/linux/ | sudo bash
-```
+**Sécurité automatique :**
+- ✅ Vérification signature HMAC
+- ✅ Validation timestamp (< 1h)
+- ✅ Vérification expiration
+- ✅ One-time token envoyé au callback
+- ✅ Marquage automatique après installation
 
 ## 🔧 Configuration requise
 
@@ -148,57 +219,177 @@ curl -L https://api.votredomaine.com/clients/{uuid}/deploy/linux/ | sudo bash
   - arm64
   - i386
 
-## 📊 Workflow
+## 📊 Workflow de Sécurité
 
 ```
-┌──────────────┐
-│  Dashboard   │  1. Créer déploiement
-│   (Vue.js)   │─────────────────────┐
-└──────────────┘                     │
-                                     ▼
-                            ┌─────────────────┐
-                            │   API Django    │
-                            │   (Backend)     │
-                            └─────────────────┘
-                                     │
-                                     │ 2. Générer UUID
-                                     │ 3. Stocker config
-                                     │
-                                     ▼
-┌──────────────┐            ┌─────────────────┐
-│   Serveur    │  4. Wget   │  Script Shell   │
-│    Linux     │◀───────────│  (rmmagent.sh)  │
-└──────────────┘            └─────────────────┘
-        │                           │
-        │ 5. Exécuter               │ 6. Récupérer config
-        │                           │    via UUID
-        │                           │
-        │ 7. Installer              │
-        │    - Go                   │
-        │    - Mesh Agent           │
-        │    - RMM Agent            │
-        │                           │
-        │ 8. Notifier succès        │
-        └───────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  1. CRÉATION DU DÉPLOIEMENT                                     │
+├─────────────────────────────────────────────────────────────────┤
+│  Admin Django / Django Shell                                    │
+│  → Génération automatique des 3 tokens:                         │
+│     • signing_token (128 chars)                                 │
+│     • one_time_token (128 chars)                                │
+│     • signature_secret (256 chars)                              │
+└─────────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  2. GÉNÉRATION URL SIGNÉE                                       │
+├─────────────────────────────────────────────────────────────────┤
+│  deployment.get_signed_url()                                    │
+│  → Timestamp actuel                                             │
+│  → Data = f"{uuid}:{timestamp}"                                 │
+│  → Signature = HMAC-SHA256(data, signature_secret)              │
+│  → URL avec ?t=timestamp&sig=signature                          │
+└─────────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  3. TÉLÉCHARGEMENT DU SCRIPT                                    │
+├─────────────────────────────────────────────────────────────────┤
+│  wget URL_SIGNÉE -O install.sh                                  │
+│  → LinuxDeploymentScriptView.get()                              │
+│     ✓ Validation signature HMAC                                 │
+│     ✓ Validation timestamp < 1h                                 │
+│     ✓ Vérification expires_at                                   │
+│     ✓ Log de l'événement                                        │
+│  → Script retourné avec one_time_token intégré                  │
+└─────────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  4. INSTALLATION                                                │
+├─────────────────────────────────────────────────────────────────┤
+│  sudo ./install.sh                                              │
+│  → Installation Go, Mesh Agent, RMM Agent                       │
+│  → Envoi callback POST /installed/ avec one_time_token          │
+└─────────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  5. CALLBACK ET VALIDATION                                      │
+├─────────────────────────────────────────────────────────────────┤
+│  LinuxDeploymentInstallCallbackView.post()                      │
+│  → Validation one_time_token                                    │
+│  → Vérification token_used == False                             │
+│  → Marquage token_used = True                                   │
+│  → Incrément agents_installed                                   │
+│  → Log de succès                                                │
+└─────────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  6. TENTATIVES SUIVANTES                                        │
+├─────────────────────────────────────────────────────────────────┤
+│  → token_used == True                                           │
+│  → ❌ BLOQUÉ (HTTP 400 "Token déjà utilisé")                    │
+│  → Log de la tentative d'utilisation                            │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## 🔒 Sécurité
+## 🔒 Triple Couche de Sécurité
 
-- ✅ Authentification requise pour les endpoints de gestion
-- ✅ UUID unique et non prédictible pour chaque déploiement
-- ✅ Expiration automatique des liens
-- ✅ Logs complets de toutes les actions
-- ✅ HTTPS obligatoire
-- ✅ Aucune information sensible dans les URLs publiques
+### Couche 1 : Signature HMAC-SHA256
 
-## 📈 Statistiques disponibles
+**Protection :** URLs non falsifiables
 
-Le dashboard affiche :
-- Nombre total de déploiements créés
-- Déploiements actifs vs expirés
-- Nombre de téléchargements du script
-- Nombre d'installations réussies
-- Taux de succès
+```python
+# Génération
+data = f"{uuid}:{timestamp}"
+signature = hmac.new(
+    signature_secret.encode(),
+    data.encode(),
+    hashlib.sha256
+).hexdigest()
+
+# Validation dans LinuxDeploymentScriptView.get()
+if not deployment.validate_signature(data, signature):
+    return HTTP 403 "Signature invalide"
+```
+
+### Couche 2 : Timestamps
+
+**Protection :** URLs expirant en 1 heure
+
+```python
+# Validation dans LinuxDeploymentScriptView.get()
+timestamp_age = int(time.time()) - int(timestamp)
+if timestamp_age > 3600:  # 1 heure
+    return HTTP 400 "Lien expiré"
+```
+
+### Couche 3 : One-Time Tokens
+
+**Protection :** Installation unique par déploiement
+
+```python
+# Validation dans LinuxDeploymentInstallCallbackView.post()
+if deployment.token_used:
+    return HTTP 400 "Token déjà utilisé"
+
+# Marquage après succès
+deployment.use_one_time_token()  # token_used = True
+```
+
+### Protection Supplémentaires
+
+- ✅ **Expiration automatique** - Champ `expires_at`
+- ✅ **Logs d'audit** - Table `DeploymentLog`
+- ✅ **HTTPS obligatoire** - Configuration serveur
+- ✅ **Secrets serveur** - `signature_secret` jamais exposé
+- ✅ **UUID non prédictibles** - UUID4 random
+- ✅ **Rate limiting** - Protection DoS (à configurer)
+
+### Comparaison avec l'Ancien Système
+
+| Fonctionnalité | Ancien | Nouveau |
+|----------------|--------|---------|
+| URLs signées | ❌ Non | ✅ HMAC-SHA256 |
+| Timestamps | ❌ Non | ✅ < 1h |
+| One-time tokens | ❌ Non | ✅ Oui |
+| Logs d'audit | ⚠️ Limités | ✅ Complets |
+| Protection replay | ❌ Non | ✅ Oui |
+| URLs falsifiables | ❌ Oui | ✅ Non |
+
+## 📈 Monitoring et Statistiques
+
+### Via Django Admin
+
+**URL :** https://api.selest.info/admin/linux_deployments/linuxdeployment/
+
+**Informations disponibles :**
+- Liste de tous les déploiements
+- Statut (token_used, expiré, actif)
+- Nombre d'agents installés
+- Date d'utilisation du token
+- Logs d'audit
+
+### Via Django Shell
+
+```python
+from linux_deployments.models import LinuxDeployment, DeploymentLog
+from django.utils import timezone
+
+# Déploiements actifs (non utilisés, non expirés)
+active = LinuxDeployment.objects.filter(
+    token_used=False,
+    expires_at__gt=timezone.now()
+)
+print(f"Déploiements actifs: {active.count()}")
+
+# Tokens utilisés
+used = LinuxDeployment.objects.filter(token_used=True)
+print(f"Tokens utilisés: {used.count()}")
+
+# Tentatives de signature invalide (dernières 24h)
+from datetime import timedelta
+invalid_sigs = DeploymentLog.objects.filter(
+    action='invalid_signature',
+    timestamp__gte=timezone.now() - timedelta(days=1)
+)
+print(f"Tentatives de signature invalide: {invalid_sigs.count()}")
+
+# Tentatives avec token déjà utilisé
+used_attempts = DeploymentLog.objects.filter(
+    action='token_already_used'
+)
+print(f"Tentatives avec token déjà utilisé: {used_attempts.count()}")
+```
 
 ## 🤝 Contribution
 
@@ -221,23 +412,45 @@ Créez une issue sur GitHub avec :
 
 ## 📝 Changelog
 
-### Version 3.0 (Actuelle)
-- ✨ Ajout du support UUID pour le déploiement
-- ✨ Interface dashboard complète (Vue.js)
+### Version 4.0 - Signing Tokens (Mars 2026) 🔐
+
+**Nouveautés majeures :**
+- ✨ Signature HMAC-SHA256 pour URLs non falsifiables
+- ✨ Timestamps avec expiration en 1 heure
+- ✨ One-Time Tokens pour installation unique
+- ✨ Signature Secrets côté serveur
+- ✨ Logs d'audit complets (DeploymentLog)
+- ✨ Scripts de déploiement automatisés
+- ✨ Suite de tests complète
+
+**Sécurité :**
+- 🔒 Triple couche de protection
+- 🔒 Protection anti-replay
+- 🔒 Protection anti-falsification
+- 🔒 Validation multi-niveaux
+
+**Outils :**
+- 🚀 deploy-signing-tokens.sh - Déploiement auto
+- 🧪 test-signing-tokens-live.sh - Tests complets
+- 📖 Documentation technique complète
+
+**Migrations :**
+- 0001_initial.py - Table de base
+- 0002_add_signing_tokens.py - Ajout 3 tokens
+- 0003_add_deployment_log.py - Table de logs
+
+### Version 3.0
+- ✨ Support UUID pour déploiement
+- ✨ Interface dashboard
 - ✨ API REST Django
-- ✨ Notifications au serveur après installation
-- ✨ Statistiques en temps réel
-- ✨ Interface d'administration Django
+- ✨ Notifications post-installation
 
 ### Version 2.0
 - Support Synology amélioré
 - Gestion automatique de Go
-- Meilleure gestion des erreurs
-- Logs détaillés
 
 ### Version 1.0
 - Script d'installation de base
-- Support Linux standard
 
 ## 📜 Licence
 
@@ -263,4 +476,30 @@ AGPL-3.0 - Même licence que Tactical RMM
 
 ---
 
-**Note** : Cette intégration est un ajout communautaire et n'est pas officiellement supportée par l'équipe Tactical RMM. Utilisez-la à vos propres risques.
+## 🎉 Quick Start
+
+```bash
+# 1. Déployer le système (2 min)
+sudo ./deploy-signing-tokens.sh
+
+# 2. Tester l'installation (1 min)
+sudo ./test-signing-tokens-live.sh
+
+# 3. Créer un déploiement
+# → Via https://api.selest.info/admin/
+# → Ou via Django shell
+
+# 4. Installer sur un serveur Linux
+wget "URL_SIGNÉE" -O install.sh && chmod +x install.sh && sudo ./install.sh
+```
+
+**Prochaine étape :** Consultez [QUICK_START_SIGNING_TOKENS.md](../QUICK_START_SIGNING_TOKENS.md) ! 🚀
+
+---
+
+**Version :** 4.0.0 (Signing Tokens)
+**Date :** Mars 2026
+**Auteur :** fred-selest
+**License :** AGPL-3.0 (même que Tactical RMM)
+
+**Note :** Cette intégration est un ajout communautaire et n'est pas officiellement supportée par l'équipe Tactical RMM. Elle a été développée pour renforcer la sécurité des déploiements Linux.
