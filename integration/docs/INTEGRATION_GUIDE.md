@@ -90,9 +90,8 @@ Cette intégration permet aux administrateurs de Tactical RMM de déployer des a
 
 #### 3. Script d'installation
 
-**Fichiers** :
-- `rmmagent-linux-dashboard.sh` - Script avec support UUID
-- `rmmagent-linux-ameliore.sh` - Script original (compatibilité)
+**Fichier** :
+- `rmmagent-linux.sh` - Script avec support UUID et mode classique
 
 **Modes d'installation** :
 1. **Via UUID** (recommandé) : `./script.sh install {uuid} {api_url}`

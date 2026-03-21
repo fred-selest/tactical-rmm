@@ -19,7 +19,6 @@ sudo ./install-backend.sh
 ✅ Installation en une ligne sur le serveur Linux
 ✅ Suivi des installations et statistiques
 
-**→ [Guide d'installation rapide (5 minutes)](QUICK_INSTALL.md)**
 **→ [Documentation complète](DASHBOARD_INTEGRATION_README.md)**
 
 ---
@@ -62,7 +61,7 @@ Le script **`install.sh`** détecte automatiquement votre système et installe l
 | [scripts/windows/](scripts/windows/) | Scripts surveillance Windows |
 | **AUTRES** ||
 | [ALERTES_TACTICALRMM.md](ALERTES_TACTICALRMM.md) | Configuration des alertes automatiques |
-| [ANALYSE_DEPOT.md](ANALYSE_DEPOT.md) | 🆕 Analyse complète du dépôt et plan d'amélioration |
+
 
 ## Agent Synology modifié
 
@@ -80,7 +79,7 @@ Voir [rmmagent-synology/README.md](rmmagent-synology/README.md) pour l'installat
 ```
 tactical-rmm/
 ├── install.sh                        # 🆕 Script d'installation universel
-├── rmmagent-linux-ameliore.sh        # Script Linux amélioré (support Synology optimisé)
+├── rmmagent-linux.sh        # Script Linux amélioré (support Synology optimisé)
 │
 ├── scripts/
 │   ├── linux/
@@ -109,7 +108,6 @@ tactical-rmm/
 ├── rmmagent-synology/                # Agent modifié pour Synology
 │
 └── Documentation (*.md)
-    ├── ANALYSE_DEPOT.md              # 🆕 Analyse complète et recommandations
     ├── LINUX_AGENT_INSTALL.md
     ├── SYNOLOGY_AGENT_INSTALL.md
     └── ALERTES_TACTICALRMM.md
@@ -148,9 +146,9 @@ tactical-rmm/
 sudo bash <(curl -sSL https://raw.githubusercontent.com/votre-user/tactical-rmm/main/install.sh)
 
 # Méthode 2: Script Linux amélioré
-wget https://raw.githubusercontent.com/votre-user/tactical-rmm/main/rmmagent-linux-ameliore.sh
-chmod +x rmmagent-linux-ameliore.sh
-sudo ./rmmagent-linux-ameliore.sh install "MESH_URL" "API_URL" CLIENT_ID SITE_ID "AUTH_KEY" "server"
+wget https://raw.githubusercontent.com/votre-user/tactical-rmm/main/rmmagent-linux.sh
+chmod +x rmmagent-linux.sh
+sudo ./rmmagent-linux.sh install "MESH_URL" "API_URL" CLIENT_ID SITE_ID "AUTH_KEY" "server"
 ```
 
 ### Installation sur Windows

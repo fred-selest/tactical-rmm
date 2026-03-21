@@ -537,7 +537,6 @@ sudo ./install-interactive.sh
 ## 📚 Ressources complémentaires
 
 - **Installation complète :** [INSTALLATION_RMM_SELEST_INFO.md](INSTALLATION_RMM_SELEST_INFO.md)
-- **Installation rapide :** [QUICK_INSTALL.md](QUICK_INSTALL.md)
 - **Architecture :** [DASHBOARD_INTEGRATION_README.md](DASHBOARD_INTEGRATION_README.md)
 - **API REST :** [integration/README.md](integration/README.md)
 

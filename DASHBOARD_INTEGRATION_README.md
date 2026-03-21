@@ -29,7 +29,7 @@ Ce repository contient maintenant :
 
 ### 3. Script d'installation amélioré
 
-**Fichier** : `rmmagent-linux-dashboard.sh`
+**Fichier** : `rmmagent-linux.sh`
 
 Nouveau script qui supporte :
 - Installation via UUID de déploiement (mode dashboard)
@@ -170,7 +170,7 @@ Voir le guide complet : [integration/docs/INTEGRATION_GUIDE.md](integration/docs
 
 1. **Backend** : Copier les fichiers Django et créer les migrations
 2. **Frontend** : Copier les composants Vue.js et configurer les routes
-3. **Script** : Déployer `rmmagent-linux-dashboard.sh` sur votre CDN/serveur
+3. **Script** : Déployer `rmmagent-linux.sh` sur votre CDN/serveur
 4. **Configuration** : Configurer les URLs dans Django settings
 
 ## 💡 Utilisation
@@ -257,12 +257,12 @@ wget https://api.example.com/clients/a1b2.../deploy/linux/ | sudo bash
 
 ## 🔄 Rétrocompatibilité
 
-Le nouveau script `rmmagent-linux-dashboard.sh` est **100% rétrocompatible**.
+Le nouveau script `rmmagent-linux.sh` est **100% rétrocompatible**.
 
 Il supporte toujours l'ancienne méthode :
 
 ```bash
-./rmmagent-linux-dashboard.sh install \
+./rmmagent-linux.sh install \
   "https://mesh..." \
   "https://api..." \
   123 456 "auth" "server"

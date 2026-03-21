@@ -21,10 +21,9 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 **Scripts :**
 - ✅ `install-backend.sh` - Installation automatique en 1 commande
 - ✅ `create-deployment.sh` - Helper interactif pour créer des déploiements
-- ✅ `rmmagent-linux-dashboard.sh` - Script d'installation avec support UUID (v3.0)
+- ✅ `rmmagent-linux.sh` - Script d'installation avec support UUID (v3.0)
 
 **Documentation :**
-- ✅ `QUICK_INSTALL.md` - Guide d'installation rapide (5 minutes)
 - ✅ `TEST_GUIDE.md` - Guide de test complet
 - ✅ `DASHBOARD_INTEGRATION_README.md` - Documentation complète
 - ✅ `integration/README.md` - Vue d'ensemble du projet
@@ -90,7 +89,7 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 
 #### Fichiers
 
-- `rmmagent-linux-ameliore.sh` - Script principal
+- `rmmagent-linux.sh` - Script principal
 - `SCRIPT_LINUX_AMELIORE_README.md` - Documentation
 - `AMELIORATIONS_SCRIPT_LINUX.md` - Notes d'amélioration
 

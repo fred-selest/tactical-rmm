@@ -179,12 +179,12 @@ function perform_update() {
     log_info "=== DÉBUT DE LA MISE À JOUR ==="
 
     # Vérifier la présence du script de mise à jour
-    local update_script="/usr/local/bin/rmmagent-linux-ameliore.sh"
+    local update_script="/usr/local/bin/rmmagent-linux.sh"
 
     if [ ! -f "$update_script" ]; then
         # Télécharger le script depuis le dépôt
         log_info "Téléchargement du script de mise à jour..."
-        wget -q -O /tmp/rmmagent-update.sh "https://raw.githubusercontent.com/YOUR_USER/tactical-rmm/main/rmmagent-linux-ameliore.sh"
+        wget -q -O /tmp/rmmagent-update.sh "https://raw.githubusercontent.com/YOUR_USER/tactical-rmm/main/rmmagent-linux.sh"
 
         if [ $? -eq 0 ]; then
             chmod +x /tmp/rmmagent-update.sh

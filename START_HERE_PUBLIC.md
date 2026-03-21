@@ -50,7 +50,7 @@ Voici tous les guides à votre disposition :
 |---------|-------------|------------------|
 | **[install-interactive.sh](install-interactive.sh)** | 🚀 Script d'installation interactif | **LANCER EN PREMIER** |
 | **[INSTALLATION_RMM_SELEST_INFO.md](INSTALLATION_RMM_SELEST_INFO.md)** | 📖 Guide complet d'installation | Pour comprendre chaque étape |
-| **[QUICK_INSTALL.md](QUICK_INSTALL.md)** | ⚡ Guide d'installation rapide | Installation en 5 minutes |
+| **[INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)** | ⚡ Guide d'installation complet | Installation pas à pas |
 
 ### 🎨 Utilisation
 
@@ -224,7 +224,6 @@ sudo ./install.sh
 - ✅ `START_HERE.md` - Ce fichier (démarrage rapide)
 - ✅ `INSTALLATION_RMM_SELEST_INFO.md` - Guide d'installation complet
 - ✅ `GUIDE_UTILISATION_ADMIN.md` - Guide d'utilisation de l'interface admin
-- ✅ `QUICK_INSTALL.md` - Installation en 5 minutes
 - ✅ `DASHBOARD_INTEGRATION_README.md` - Architecture technique
 
 ---

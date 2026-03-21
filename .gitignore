@@ -50,6 +50,9 @@ wheels/
 # Logs
 *.log
 
+# Binaires (utiliser GitHub Releases)
+rmmagent-synology/rmmagent-synology
+
 # Sauvegardes
 *.backup
 *.bak

@@ -29,9 +29,9 @@ Voir la documentation : [SYNOLOGY_AGENT_INSTALL.md](/SYNOLOGY_AGENT_INSTALL.md)
 
 ```bash
 # Installation rapide
-wget https://raw.githubusercontent.com/votre-user/tactical-rmm/main/rmmagent-linux-ameliore.sh
-chmod +x rmmagent-linux-ameliore.sh
-sudo ./rmmagent-linux-ameliore.sh install \
+wget https://raw.githubusercontent.com/votre-user/tactical-rmm/main/rmmagent-linux.sh
+chmod +x rmmagent-linux.sh
+sudo ./rmmagent-linux.sh install \
   "https://mesh.votredomaine.com/meshagents?id=XXX" \
   "https://api.votredomaine.com" \
   "123" "456" "auth-key" "server"
@@ -334,7 +334,7 @@ L'agent doit être installé dans `/volume1/@appstore/` et non dans `/usr/local/
 
 ```bash
 # Utiliser le script amélioré qui installe automatiquement au bon endroit
-./rmmagent-linux-ameliore.sh install ...
+./rmmagent-linux.sh install ...
 ```
 
 ## Spécificités Synology

@@ -221,7 +221,7 @@ function install_linux() {
     log_info "Installation de l'agent Linux..."
 
     # Télécharger le script Linux amélioré
-    local script_url="$GITHUB_RAW/rmmagent-linux-ameliore.sh"
+    local script_url="$GITHUB_RAW/rmmagent-linux.sh"
     local script_path="/tmp/tactical-install-$$.sh"
 
     log_info "Téléchargement du script d'installation..."

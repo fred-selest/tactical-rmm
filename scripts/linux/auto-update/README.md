@@ -219,7 +219,7 @@ sudo systemctl start tactical-agent-updater.timer
    - Dernière version : depuis GitHub API
 5. **Comparaison** : Si nouvelle version disponible → mise à jour
 6. **Sauvegarde** : Backup de la configuration et du binaire
-7. **Mise à jour** : Exécute `rmmagent-linux-ameliore.sh update`
+7. **Mise à jour** : Exécute `rmmagent-linux.sh update`
 8. **Vérification** : Teste que le service fonctionne
 9. **Notification** : Envoie un email/webhook si configuré
 10. **Nettoyage** : Libère le verrou

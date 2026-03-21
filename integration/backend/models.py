@@ -126,7 +126,7 @@ sudo ./install-rmm-agent.sh"""
         """Retourne l'URL du script d'installation"""
         if self.custom_script_url:
             return self.custom_script_url
-        return "https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/rmmagent-linux-ameliore.sh"
+        return "https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/rmmagent-linux.sh"
 
     @staticmethod
     def generate_signing_token() -> str:
