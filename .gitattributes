@@ -1,0 +1,32 @@
+# Attributs Git pour tactical-rmm
+
+# Binaires - utiliser Git LFS pour les gros fichiers
+*.bin binary
+rmmagent-synology/rmmagent-synology binary filter=lfs diff=lfs merge=lfs -text
+
+# Scripts
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.py text eol=lf
+
+# Documentation
+*.md text eol=lf
+
+# Configuration
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+
+# Frontend
+*.vue text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.css text eol=lf
+
+# Go
+*.go text eol=lf
+
+# Docker
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf

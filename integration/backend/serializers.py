@@ -2,6 +2,10 @@
 Serializers Django REST Framework pour l'intégration de déploiement Linux
 À intégrer dans: api/tacticalrmm/clients/serializers.py
 """
+from __future__ import annotations
+
+from typing import Any
+
 from rest_framework import serializers
 from .models import LinuxDeployment, DeploymentLog
 
@@ -51,18 +55,18 @@ class LinuxDeploymentSerializer(serializers.ModelSerializer):
             'agents_installed',
         ]
 
-    def get_install_command(self, obj):
+    def get_install_command(self, obj: LinuxDeployment) -> str:
         """Retourne la commande d'installation complète"""
         return obj.get_install_command()
 
-    def get_deployment_url(self, obj):
+    def get_deployment_url(self, obj: LinuxDeployment) -> str:
         """Retourne l'URL de déploiement complète"""
         request = self.context.get('request')
         if request:
             return request.build_absolute_uri(f'/clients/{obj.uuid}/deploy/linux/')
         return f"/clients/{obj.uuid}/deploy/linux/"
 
-    def get_script_download_url(self, obj):
+    def get_script_download_url(self, obj: LinuxDeployment) -> str:
         """Retourne l'URL de téléchargement du script"""
         return obj.get_script_url()
 
@@ -91,6 +95,7 @@ class DeploymentLogSerializer(serializers.ModelSerializer):
 class LinuxDeploymentCreateSerializer(serializers.Serializer):
     """
     Serializer pour la création d'un déploiement Linux
+    Inclut des validateurs personnalisés pour chaque champ critique
     """
     client_id = serializers.IntegerField(required=True)
     client_name = serializers.CharField(max_length=255, required=True)
@@ -110,6 +115,46 @@ class LinuxDeploymentCreateSerializer(serializers.Serializer):
     install_mesh = serializers.BooleanField(default=True)
     custom_script_url = serializers.URLField(required=False, allow_blank=True)
     mesh_url = serializers.URLField(required=False)
+
+    def validate_client_id(self, value: int) -> int:
+        """Vérifie que l'identifiant du client est strictement positif"""
+        if value <= 0:
+            raise serializers.ValidationError(
+                "L'identifiant du client doit être supérieur à 0."
+            )
+        return value
+
+    def validate_site_id(self, value: int) -> int:
+        """Vérifie que l'identifiant du site est strictement positif"""
+        if value <= 0:
+            raise serializers.ValidationError(
+                "L'identifiant du site doit être supérieur à 0."
+            )
+        return value
+
+    def validate_custom_script_url(self, value: str) -> str:
+        """Vérifie que l'URL du script personnalisé utilise HTTPS si elle est fournie"""
+        if value and not value.startswith('https://'):
+            raise serializers.ValidationError(
+                "L'URL du script personnalisé doit commencer par https://."
+            )
+        return value
+
+    def validate_mesh_url(self, value: str) -> str:
+        """Vérifie que l'URL du Mesh Agent utilise HTTPS si elle est fournie"""
+        if value and not value.startswith('https://'):
+            raise serializers.ValidationError(
+                "L'URL du Mesh Agent doit commencer par https://."
+            )
+        return value
+
+    def validate_expires_days(self, value: int) -> int:
+        """Vérifie que la durée d'expiration est entre 1 et 365 jours"""
+        if value < 1 or value > 365:
+            raise serializers.ValidationError(
+                "La durée d'expiration doit être comprise entre 1 et 365 jours."
+            )
+        return value
 
 
 class DeploymentStatsSerializer(serializers.Serializer):

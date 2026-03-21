@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install ruff flake8
+
+      - name: Run Ruff
+        run: ruff check integration/backend/
+
+      - name: Run Flake8
+        run: flake8 integration/backend/ --max-line-length=120 --ignore=E501,W503
+
+  lint-shell:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        run: |
+          find . -name "*.sh" -not -path "./.git/*" | xargs shellcheck --severity=warning || true
+
+  test-python:
+    name: Test Python
+    runs-on: ubuntu-latest
+    needs: lint-python
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test_tacticalrmm
+          POSTGRES_USER: tactical
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          cd integration/backend
+          python -m pytest test_*.py -v --tb=short || python -m unittest discover -s . -p "test_*.py" -v
+        env:
+          DATABASE_URL: postgres://tactical:test_password@localhost:5432/test_tacticalrmm
+
+  security-check:
+    name: Security Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for secrets
+        run: |
+          # Vérifier qu'aucun secret n'est dans le code
+          if grep -rn "password\s*=\s*['\"][^'\"]*['\"]" integration/backend/ --include="*.py" | grep -v "test_" | grep -v "#"; then
+            echo "WARNING: Possible hardcoded password found"
+          fi
+
+      - name: Check for large binaries
+        run: |
+          find . -size +5M -not -path "./.git/*" -exec ls -lh {} \;

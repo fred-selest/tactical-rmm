@@ -1,0 +1,36 @@
+#!/bin/bash
+# =============================================================================
+# Configuration centralisée pour les scripts Tactical RMM
+# Copiez ce fichier en config.sh et adaptez les valeurs
+# =============================================================================
+
+# Chemin d'installation de Tactical RMM
+# Valeurs possibles : /rmm/api/tacticalrmm, /opt/tacticalrmm/api/tacticalrmm
+RMM_PATH="${RMM_PATH:-/rmm/api/tacticalrmm}"
+
+# URL de l'API
+API_URL="${API_URL:-https://api.yourdomain.com}"
+
+# URL du Mesh Agent
+MESH_URL="${MESH_URL:-https://mesh.yourdomain.com}"
+
+# Chemin de l'environnement virtuel Python
+VENV_PATH="${VENV_PATH:-/rmm/api/env}"
+
+# Utilisateur Tactical RMM
+RMM_USER="${RMM_USER:-tactical}"
+
+# Niveau de log (DEBUG, INFO, WARNING, ERROR)
+LOG_LEVEL="${LOG_LEVEL:-INFO}"
+
+# Répertoire des logs
+LOG_DIR="${LOG_DIR:-/var/log/tactical-rmm}"
+
+# Activer les notifications
+NOTIFICATIONS_ENABLED="${NOTIFICATIONS_ENABLED:-false}"
+
+# Webhook Slack (optionnel)
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+
+# Webhook Discord (optionnel)
+DISCORD_WEBHOOK="${DISCORD_WEBHOOK:-}"

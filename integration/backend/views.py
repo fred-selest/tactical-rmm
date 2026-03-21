@@ -2,17 +2,38 @@
 Vues Django pour l'intégration de déploiement Linux
 À intégrer dans: api/tacticalrmm/clients/views.py
 """
+from __future__ import annotations
+
 import uuid
 from datetime import timedelta
+
 from django.utils import timezone
-from django.http import HttpResponse, JsonResponse, Http404
+from django.db.models import Sum
+from django.http import HttpResponse, JsonResponse, Http404, HttpRequest
 from rest_framework.views import APIView
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
 from .models import LinuxDeployment, DeploymentLog
 from .serializers import LinuxDeploymentSerializer
+from .notifications import notification_manager
+from .throttling import DeploymentDownloadThrottle, InstallCallbackThrottle
+
+
+def get_client_ip(request: HttpRequest | Request) -> str | None:
+    """
+    Fonction utilitaire pour récupérer l'adresse IP du client.
+    Gère le cas où la requête passe par un proxy (header X-Forwarded-For).
+    """
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        # Prendre la première IP de la liste (IP du client original)
+        ip: str = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
 
 
 class LinuxDeploymentCreateView(APIView):
@@ -22,7 +43,7 @@ class LinuxDeploymentCreateView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
+    def post(self, request: Request) -> Response:
         """
         Crée un nouveau lien de déploiement Linux
 
@@ -96,21 +117,12 @@ class LinuxDeploymentCreateView(APIView):
         DeploymentLog.objects.create(
             deployment=deployment,
             action='created',
-            ip_address=self.get_client_ip(request),
+            ip_address=get_client_ip(request),
             user_agent=request.META.get('HTTP_USER_AGENT', '')
         )
 
         serializer = LinuxDeploymentSerializer(deployment, context={'request': request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    def get_client_ip(self, request):
-        """Récupère l'IP du client"""
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
 
 
 class LinuxDeploymentListView(APIView):
@@ -120,7 +132,7 @@ class LinuxDeploymentListView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         deployments = LinuxDeployment.objects.all()
 
         # Filtrage optionnel
@@ -144,7 +156,7 @@ class LinuxDeploymentDetailView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, deployment_uuid):
+    def get(self, request: Request, deployment_uuid: str) -> Response:
         try:
             deployment = LinuxDeployment.objects.get(uuid=deployment_uuid)
             serializer = LinuxDeploymentSerializer(deployment, context={'request': request})
@@ -152,7 +164,7 @@ class LinuxDeploymentDetailView(APIView):
         except LinuxDeployment.DoesNotExist:
             raise Http404("Déploiement non trouvé")
 
-    def delete(self, request, deployment_uuid):
+    def delete(self, request: Request, deployment_uuid: str) -> Response:
         try:
             deployment = LinuxDeployment.objects.get(uuid=deployment_uuid)
             deployment.delete()
@@ -169,8 +181,9 @@ class LinuxDeploymentScriptView(APIView):
     Cette URL est publique (pas d'authentification) car utilisée pour le déploiement
     """
     permission_classes = []  # Pas d'authentification requise
+    throttle_classes = [DeploymentDownloadThrottle]
 
-    def get(self, request, deployment_uuid):
+    def get(self, request: Request, deployment_uuid: str) -> HttpResponse:
         try:
             deployment = LinuxDeployment.objects.get(uuid=deployment_uuid)
         except LinuxDeployment.DoesNotExist:
@@ -191,7 +204,7 @@ class LinuxDeploymentScriptView(APIView):
                 DeploymentLog.objects.create(
                     deployment=deployment,
                     action='invalid_signature',
-                    ip_address=self.get_client_ip(request),
+                    ip_address=get_client_ip(request),
                     user_agent=request.META.get('HTTP_USER_AGENT', ''),
                     error_message=f"Signature HMAC invalide: {signature}"
                 )
@@ -216,19 +229,19 @@ class LinuxDeploymentScriptView(APIView):
         DeploymentLog.objects.create(
             deployment=deployment,
             action='downloaded',
-            ip_address=self.get_client_ip(request),
+            ip_address=get_client_ip(request),
             user_agent=request.META.get('HTTP_USER_AGENT', '')
         )
 
         # Générer le script
-        script = self.generate_install_script(deployment)
+        script = self._generate_install_script(deployment)
 
         # Retourner le script
         response = HttpResponse(script, content_type='text/x-shellscript')
         response['Content-Disposition'] = f'attachment; filename="install-rmm-agent-{deployment.uuid}.sh"'
         return response
 
-    def generate_install_script(self, deployment):
+    def _generate_install_script(self, deployment: LinuxDeployment) -> str:
         """Génère le script d'installation avec les paramètres pré-configurés"""
 
         # URL du script de base
@@ -329,15 +342,6 @@ echo -e "${{GREEN}}========================================${{NC}}"
 """
         return script
 
-    def get_client_ip(self, request):
-        """Récupère l'IP du client"""
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
-
 
 class LinuxDeploymentInstallCallbackView(APIView):
     """
@@ -345,8 +349,9 @@ class LinuxDeploymentInstallCallbackView(APIView):
     POST /api/v3/linux-deployments/{uuid}/installed/
     """
     permission_classes = []  # Pas d'authentification requise
+    throttle_classes = [InstallCallbackThrottle]
 
-    def post(self, request, deployment_uuid):
+    def post(self, request: Request, deployment_uuid: str) -> Response:
         try:
             deployment = LinuxDeployment.objects.get(uuid=deployment_uuid)
         except LinuxDeployment.DoesNotExist:
@@ -364,7 +369,7 @@ class LinuxDeploymentInstallCallbackView(APIView):
                 DeploymentLog.objects.create(
                     deployment=deployment,
                     action='invalid_token',
-                    ip_address=self.get_client_ip(request),
+                    ip_address=get_client_ip(request),
                     hostname=hostname,
                     error_message=f"One-time token invalide: {one_time_token[:10]}..."
                 )
@@ -375,7 +380,7 @@ class LinuxDeploymentInstallCallbackView(APIView):
                 DeploymentLog.objects.create(
                     deployment=deployment,
                     action='token_already_used',
-                    ip_address=self.get_client_ip(request),
+                    ip_address=get_client_ip(request),
                     hostname=hostname,
                     error_message=f"Token déjà utilisé le {deployment.token_used_at}"
                 )
@@ -386,7 +391,7 @@ class LinuxDeploymentInstallCallbackView(APIView):
                 try:
                     deployment.use_one_time_token()
                 except ValueError as e:
-                    # Token déjà utilisé (race condition possible)
+                    # Token déjà utilisé (condition de concurrence possible)
                     return Response({'error': str(e)}, status=410)
 
         # Incrémenter le compteur d'installations si succès
@@ -398,21 +403,30 @@ class LinuxDeploymentInstallCallbackView(APIView):
         DeploymentLog.objects.create(
             deployment=deployment,
             action=f'installed_{install_status}',
-            ip_address=self.get_client_ip(request),
+            ip_address=get_client_ip(request),
             hostname=hostname,
             error_message=data.get('error', '')
         )
 
-        return Response({'status': 'logged'})
+        # Envoyer les notifications
+        if install_status == 'success':
+            notification_manager.notify_installation_success(
+                deployment_uuid=str(deployment.uuid),
+                client_name=deployment.client_name,
+                site_name=deployment.site_name,
+                hostname=hostname,
+                ip_address=get_client_ip(request),
+            )
+        elif install_status == 'failed':
+            notification_manager.notify_installation_failure(
+                deployment_uuid=str(deployment.uuid),
+                client_name=deployment.client_name,
+                site_name=deployment.site_name,
+                hostname=hostname,
+                error=data.get('error', ''),
+            )
 
-    def get_client_ip(self, request):
-        """Récupère l'IP du client"""
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
+        return Response({'status': 'logged'})
 
 
 class LinuxDeploymentStatsView(APIView):
@@ -422,12 +436,12 @@ class LinuxDeploymentStatsView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        total_deployments = LinuxDeployment.objects.count()
-        active_deployments = LinuxDeployment.objects.filter(expires_at__gt=timezone.now()).count()
-        expired_deployments = LinuxDeployment.objects.filter(expires_at__lte=timezone.now()).count()
-        total_downloads = LinuxDeployment.objects.aggregate(models.Sum('download_count'))['download_count__sum'] or 0
-        total_installations = LinuxDeployment.objects.aggregate(models.Sum('agents_installed'))['agents_installed__sum'] or 0
+    def get(self, request: Request) -> Response:
+        total_deployments: int = LinuxDeployment.objects.count()
+        active_deployments: int = LinuxDeployment.objects.filter(expires_at__gt=timezone.now()).count()
+        expired_deployments: int = LinuxDeployment.objects.filter(expires_at__lte=timezone.now()).count()
+        total_downloads: int = LinuxDeployment.objects.aggregate(Sum('download_count'))['download_count__sum'] or 0
+        total_installations: int = LinuxDeployment.objects.aggregate(Sum('agents_installed'))['agents_installed__sum'] or 0
 
         return Response({
             'total_deployments': total_deployments,

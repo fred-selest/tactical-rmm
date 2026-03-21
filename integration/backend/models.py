@@ -2,13 +2,16 @@
 Modèles Django pour l'intégration de déploiement Linux
 À intégrer dans: api/tacticalrmm/clients/models.py
 """
+from __future__ import annotations
+
 import uuid
 import hmac
 import hashlib
 import secrets
+from datetime import datetime, timedelta
+
 from django.db import models
 from django.utils import timezone
-from datetime import timedelta
 
 
 class LinuxDeployment(models.Model):
@@ -99,118 +102,48 @@ class LinuxDeployment(models.Model):
         db_table = 'linux_deployments'
         ordering = ['-created_at']
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Linux Deployment {self.uuid} - {self.client_name}/{self.site_name}"
 
-    def is_expired(self):
+    def is_expired(self) -> bool:
         """Vérifie si le déploiement a expiré"""
         return timezone.now() > self.expires_at
 
-    def increment_download(self):
+    def increment_download(self) -> None:
         """Incrémente le compteur de téléchargements"""
         self.download_count += 1
         self.last_downloaded = timezone.now()
         self.save(update_fields=['download_count', 'last_downloaded'])
 
-    def get_install_command(self):
+    def get_install_command(self) -> str:
         """Génère la commande d'installation"""
         deployment_url = f"{self.api_url}/clients/{self.uuid}/deploy/linux/"
         return f"""wget {deployment_url} -O install-rmm-agent.sh
 chmod +x install-rmm-agent.sh
 sudo ./install-rmm-agent.sh"""
 
-    def get_script_url(self):
+    def get_script_url(self) -> str:
         """Retourne l'URL du script d'installation"""
         if self.custom_script_url:
             return self.custom_script_url
         return "https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/rmmagent-linux-ameliore.sh"
 
     @staticmethod
-    def generate_signing_token():
-        """Génère un token de signature unique"""
-        return secrets.token_urlsafe(48)
-
-    @staticmethod
-    def generate_one_time_token():
-        """Génère un token unique à usage unique"""
-        return secrets.token_urlsafe(48)
-
-    @staticmethod
-    def generate_signature_secret():
-        """Génère un secret pour les signatures HMAC"""
-        return secrets.token_urlsafe(96)
-
-    def generate_signature(self, data_to_sign):
-        """
-        Génère une signature HMAC pour les données fournies
-
-        Args:
-            data_to_sign: str - Données à signer (ex: uuid + timestamp)
-
-        Returns:
-            str - Signature HMAC en hexadécimal
-        """
-        return hmac.new(
-            self.signature_secret.encode('utf-8'),
-            data_to_sign.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-
-    def validate_signature(self, data_to_sign, signature):
-        """
-        Valide une signature HMAC
-
-        Args:
-            data_to_sign: str - Données signées
-            signature: str - Signature à valider
-
-        Returns:
-            bool - True si la signature est valide
-        """
-        expected_signature = self.generate_signature(data_to_sign)
-        return hmac.compare_digest(expected_signature, signature)
-
-    def get_signed_url(self):
-        """
-        Génère une URL signée pour le téléchargement du script
-
-        Returns:
-            str - URL complète avec signature HMAC
-        """
-        timestamp = str(int(timezone.now().timestamp()))
-        data_to_sign = f"{self.uuid}:{timestamp}"
-        signature = self.generate_signature(data_to_sign)
-
-        return f"{self.api_url}/clients/{self.uuid}/deploy/linux/?t={timestamp}&sig={signature}"
-
-    def use_one_time_token(self):
-        """Marque le one-time token comme utilisé"""
-        if self.token_used:
-            raise ValueError("Ce token a déjà été utilisé")
-
-        self.token_used = True
-        self.token_used_at = timezone.now()
-        self.save(update_fields=['token_used', 'token_used_at'])
-
-    def is_token_valid(self):
-        """Vérifie si le one-time token est toujours valide"""
-        if self.token_used:
-            return False
-        if self.is_expired():
-            return False
-        return True
-
-    @staticmethod
-    def generate_signing_token():
+    def generate_signing_token() -> str:
         """Génère un token de signature aléatoire sécurisé"""
         return secrets.token_hex(32)  # 64 caractères hexadécimaux
 
     @staticmethod
-    def generate_signature_secret():
+    def generate_one_time_token() -> str:
+        """Génère un token unique à usage unique"""
+        return secrets.token_urlsafe(48)
+
+    @staticmethod
+    def generate_signature_secret() -> str:
         """Génère un secret pour les signatures HMAC"""
         return secrets.token_hex(64)  # 128 caractères hexadécimaux
 
-    def generate_signature(self, data_to_sign):
+    def generate_signature(self, data_to_sign: str) -> str:
         """
         Génère une signature HMAC pour les données fournies
 
@@ -227,7 +160,21 @@ sudo ./install-rmm-agent.sh"""
         )
         return signature.hexdigest()
 
-    def verify_signature(self, data_to_verify, provided_signature):
+    def validate_signature(self, data_to_sign: str, signature: str) -> bool:
+        """
+        Valide une signature HMAC
+
+        Args:
+            data_to_sign: Données signées
+            signature: Signature à valider
+
+        Returns:
+            True si la signature est valide
+        """
+        expected_signature = self.generate_signature(data_to_sign)
+        return hmac.compare_digest(expected_signature, signature)
+
+    def verify_signature(self, data_to_verify: str, provided_signature: str) -> bool:
         """
         Vérifie une signature HMAC
 
@@ -241,7 +188,7 @@ sudo ./install-rmm-agent.sh"""
         expected_signature = self.generate_signature(data_to_verify)
         return hmac.compare_digest(expected_signature, provided_signature)
 
-    def get_signed_url(self):
+    def get_signed_url(self) -> str:
         """
         Génère une URL signée pour le téléchargement du script
 
@@ -256,7 +203,7 @@ sudo ./install-rmm-agent.sh"""
 
         return f"{base_url}?token={self.signing_token}&sig={signature}"
 
-    def use_one_time_token(self):
+    def use_one_time_token(self) -> None:
         """Marque le one-time token comme utilisé"""
         if self.token_used:
             raise ValueError("Ce token a déjà été utilisé")
@@ -265,7 +212,15 @@ sudo ./install-rmm-agent.sh"""
         self.token_used_at = timezone.now()
         self.save(update_fields=['token_used', 'token_used_at'])
 
-    def can_be_used(self):
+    def is_token_valid(self) -> bool:
+        """Vérifie si le one-time token est toujours valide"""
+        if self.token_used:
+            return False
+        if self.is_expired():
+            return False
+        return True
+
+    def can_be_used(self) -> tuple[bool, str]:
         """
         Vérifie si le déploiement peut être utilisé
 
@@ -297,5 +252,5 @@ class DeploymentLog(models.Model):
         db_table = 'deployment_logs'
         ordering = ['-timestamp']
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.action} - {self.deployment.uuid} - {self.timestamp}"

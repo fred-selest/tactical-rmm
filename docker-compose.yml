@@ -1,0 +1,36 @@
+# Docker Compose pour le développement local
+# Usage: docker-compose up -d
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: tacticalrmm
+      POSTGRES_USER: tactical
+      POSTGRES_PASSWORD: tactical_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tactical -d tacticalrmm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./integration:/app/integration
+    environment:
+      DATABASE_URL: postgres://tactical:tactical_dev_password@db:5432/tacticalrmm
+      DJANGO_SETTINGS_MODULE: tacticalrmm.settings
+      DEBUG: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
