@@ -39,7 +39,10 @@ done
 
 echo ""
 echo "--- Processus PHP-FPM ---"
-php_fpm_count=$(pgrep -c php-fpm 2>/dev/null || echo 0)
+php_fpm_count=$(pgrep -c php-fpm 2>/dev/null)
+if [ -z "$php_fpm_count" ]; then
+    php_fpm_count=0
+fi
 if [ $php_fpm_count -gt 0 ]; then
     echo "[OK] PHP-FPM ($php_fpm_count processus)"
 else

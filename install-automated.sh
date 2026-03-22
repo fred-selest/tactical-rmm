@@ -423,7 +423,21 @@ def main():
         ("Surveillance Bases de Données Complète", "scripts/database/check-database.sh", "Database"),
     ]
     
-    all_scripts = system_scripts + docker_scripts + database_scripts
+    # Scripts Plesk
+    plesk_scripts = [
+        ("Plesk - Surveillance complète", "scripts/plesk/plesk_surveillance_complete.sh", "Plesk"),
+        ("Plesk - Vérification services", "scripts/plesk/plesk_check_services.sh", "Plesk"),
+        ("Plesk - Vérification disque", "scripts/plesk/plesk_check_disk.sh", "Plesk"),
+        ("Plesk - Vérification SSL", "scripts/plesk/plesk_check_ssl.sh", "Plesk"),
+        ("Plesk - Vérification mail", "scripts/plesk/plesk_check_mail.sh", "Plesk"),
+        ("Plesk - Vérification sauvegarde", "scripts/plesk/plesk_check_backup.sh", "Plesk"),
+        ("Plesk - Vérification sécurité", "scripts/plesk/plesk_check_security.sh", "Plesk"),
+        ("Plesk - Vérification Docker", "scripts/plesk/plesk_check_docker.sh", "Plesk"),
+        ("Plesk - Vérification Docker Compose", "scripts/plesk/plesk_check_docker_compose.sh", "Plesk"),
+        ("Plesk - Vérification tout", "scripts/plesk/plesk_check_all.sh", "Plesk"),
+    ]
+    
+    all_scripts = system_scripts + docker_scripts + database_scripts + plesk_scripts
     
     for name, filepath, category in all_scripts:
         full_path = tactical_rmm_path / filepath
