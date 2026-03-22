@@ -384,11 +384,13 @@ def import_script(name, filepath, category, supported_platforms=['linux']):
         existing.script_body = content
         existing.category = category
         existing.supported_platforms = supported_platforms
+        existing.shell = 'shell'
         existing.save()
     else:
         Script.objects.create(
             name=name,
             script_type='shell',
+            shell='shell',
             category=category,
             script_body=content,
             supported_platforms=supported_platforms

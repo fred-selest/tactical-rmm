@@ -74,6 +74,25 @@ chmod +x rmmagent-linux.sh
 
 Voir [SYNOLOGY_AGENT_INSTALL.md](SYNOLOGY_AGENT_INSTALL.md) pour les instructions complètes.
 
+## 🔁 Mise à Jour
+
+### Mise à jour manuelle
+```bash
+cd /home/debian/tactical-rmm
+sudo ./update-tactical-rmm.sh
+```
+
+### Mise à jour automatique
+```bash
+# Mise à jour quotidienne
+sudo ./setup-auto-update.sh --daily
+
+# Mise à jour hebdomadaire  
+sudo ./setup-auto-update.sh --weekly
+```
+
+Voir [UPDATE.md](UPDATE.md) pour la documentation complète du système de mise à jour.
+
 ## Licence
 
 MIT License - Copyright (c) 2025
