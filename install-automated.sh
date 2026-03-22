@@ -416,6 +416,24 @@ def main():
         ("Surveillance Docker", "scripts/docker/check-docker.sh", "Docker"),
     ]
     
+def main():
+    """Importer tous les scripts disponibles"""
+    tactical_rmm_path = Path("/home/debian/tactical-rmm")
+    
+    # Scripts système
+    system_scripts = [
+        ("Surveillance CPU", "scripts/system/check-cpu.sh", "System"),
+        ("Surveillance Mémoire", "scripts/system/check-memory.sh", "System"),
+        ("Surveillance Disque", "scripts/system/check-disk.sh", "System"),
+        ("Surveillance Réseau", "scripts/system/check-network.sh", "System"),
+        ("Surveillance Système Complète", "scripts/system/check-system.sh", "System"),
+    ]
+    
+    # Scripts Docker
+    docker_scripts = [
+        ("Surveillance Docker", "scripts/docker/check-docker.sh", "Docker"),
+    ]
+    
     # Scripts bases de données
     database_scripts = [
         ("Surveillance MySQL/MariaDB", "scripts/database/check-mysql.sh", "Database"),
@@ -437,7 +455,20 @@ def main():
         ("Plesk - Vérification tout", "scripts/plesk/plesk_check_all.sh", "Plesk"),
     ]
     
-    all_scripts = system_scripts + docker_scripts + database_scripts + plesk_scripts
+    # Scripts Synology
+    synology_scripts = [
+        ("Synology - Surveillance complète", "scripts/synology/synology_surveillance_complete.sh", "Synology"),
+        ("Synology - Vérification tout", "scripts/synology/synology_check_all.sh", "Synology"),
+        ("Synology - Vérification système", "scripts/synology/synology_check_system.sh", "Synology"),
+        ("Synology - Vérification disques", "scripts/synology/synology_check_disks.sh", "Synology"),
+        ("Synology - Vérification RAID", "scripts/synology/synology_check_raid.sh", "Synology"),
+        ("Synology - Vérification services", "scripts/synology/synology_check_services.sh", "Synology"),
+        ("Synology - Vérification sauvegarde", "scripts/synology/synology_check_backup.sh", "Synology"),
+        ("Synology - Vérification HyperBackup", "scripts/synology/synology_check_hyperbackup.sh", "Synology"),
+        ("Synology - Vérification sécurité", "scripts/synology/synology_check_security.sh", "Synology"),
+    ]
+    
+    all_scripts = system_scripts + docker_scripts + database_scripts + plesk_scripts + synology_scripts
     
     for name, filepath, category in all_scripts:
         full_path = tactical_rmm_path / filepath
