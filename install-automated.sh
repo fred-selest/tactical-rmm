@@ -336,6 +336,113 @@ restart_services() {
     fi
 }
 
+import_monitoring_scripts() {
+    print_header "Importation des scripts de surveillance avancée"
+    
+    log "INFO" "Vérification de l'accès à la base de données Tactical RMM..."
+    
+    # Vérifier que nous pouvons accéder à Django
+    if ! sudo -u tactical $PYTHON_BIN -c "import django; print('Django accessible')" > /dev/null 2>&1; then
+        log "WARNING" "Django non accessible, importation des scripts ignorée"
+        return 0
+    fi
+    
+    # Créer le script d'importation temporaire
+    IMPORT_SCRIPT="/tmp/import-monitoring-scripts.py"
+    cat > "$IMPORT_SCRIPT" << 'EOF'
+import os
+import sys
+import django
+from pathlib import Path
+
+# Ajouter le chemin de Tactical RMM
+sys.path.append('/rmm/api/tacticalrmm')
+
+# Configurer les paramètres Django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tacticalrmm.settings')
+django.setup()
+
+from scripts.models import Script
+
+def read_script_file(filepath):
+    """Lire le contenu d'un fichier de script"""
+    try:
+        with open(filepath, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+def import_script(name, filepath, category, supported_platforms=['linux']):
+    """Importer un script dans la base de données"""
+    content = read_script_file(filepath)
+    if content is None:
+        return False
+    
+    # Vérifier si le script existe déjà
+    existing = Script.objects.filter(name=name).first()
+    if existing:
+        existing.script_body = content
+        existing.category = category
+        existing.supported_platforms = supported_platforms
+        existing.save()
+    else:
+        Script.objects.create(
+            name=name,
+            script_type='shell',
+            category=category,
+            script_body=content,
+            supported_platforms=supported_platforms
+        )
+    
+    return True
+
+def main():
+    """Importer tous les scripts de surveillance avancée"""
+    tactical_rmm_path = Path("/home/debian/tactical-rmm")
+    
+    # Scripts système
+    system_scripts = [
+        ("Surveillance CPU", "scripts/system/check-cpu.sh", "System"),
+        ("Surveillance Mémoire", "scripts/system/check-memory.sh", "System"),
+        ("Surveillance Disque", "scripts/system/check-disk.sh", "System"),
+        ("Surveillance Réseau", "scripts/system/check-network.sh", "System"),
+        ("Surveillance Système Complète", "scripts/system/check-system.sh", "System"),
+    ]
+    
+    # Scripts Docker
+    docker_scripts = [
+        ("Surveillance Docker", "scripts/docker/check-docker.sh", "Docker"),
+    ]
+    
+    # Scripts bases de données
+    database_scripts = [
+        ("Surveillance MySQL/MariaDB", "scripts/database/check-mysql.sh", "Database"),
+        ("Surveillance PostgreSQL", "scripts/database/check-postgresql.sh", "Database"),
+        ("Surveillance Bases de Données Complète", "scripts/database/check-database.sh", "Database"),
+    ]
+    
+    all_scripts = system_scripts + docker_scripts + database_scripts
+    
+    for name, filepath, category in all_scripts:
+        full_path = tactical_rmm_path / filepath
+        import_script(name, str(full_path), category)
+
+if __name__ == "__main__":
+    main()
+EOF
+    
+    # Exécuter l'importation
+    log "STEP" "Importation des scripts de surveillance..."
+    if cd "$RMM_PATH" && sudo -u tactical $PYTHON_BIN "$IMPORT_SCRIPT"; then
+        log "SUCCESS" "Scripts de surveillance importés avec succès"
+    else
+        log "WARNING" "Échec de l'importation des scripts (continuation)"
+    fi
+    
+    # Nettoyer le script temporaire
+    rm -f "$IMPORT_SCRIPT"
+}
+
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -468,6 +575,7 @@ configure_django
 configure_urls
 run_migrations
 restart_services
+import_monitoring_scripts
 
 # Affichage du résumé
 show_completion_summary
