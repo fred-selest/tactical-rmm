@@ -38,11 +38,7 @@ check_cpu_history() {
     # Compter les entrées récentes avec utilisation élevée
     if [ -f "$LOG_FILE" ]; then
         while IFS= read -r line; do
-            # Extraire le timestamp et l'utilisation.
-            # Le regex est passé par une variable : écrit en ligne dans
-            # [[ $line =~ ... ]], la séquence " (" fait échouer le
-            # tokenizer de bash ("syntax error in conditional expression")
-            # et le script sortait en 0 en masquant l'erreur.
+            # Extraire le timestamp et l'utilisation
             if [[ $line =~ $LOG_LINE_RE ]]; then
                 log_time="${BASH_REMATCH[1]}"
                 usage="${BASH_REMATCH[2]}"
