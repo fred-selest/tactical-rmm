@@ -12,7 +12,12 @@ log() {
 
 # Fonction pour obtenir les interfaces réseau
 get_network_interfaces() {
-    ip -br addr show | grep -v LOOPBACK | awk '{print $1}'
+    # iproute2 peut manquer sur une image minimale : on dégrade au lieu d’échouer.
+    if command -v ip >/dev/null 2>&1; then
+        ip -br addr show | grep -v LOOPBACK | awk '{print $1}'
+    else
+        hostname -I 2>/dev/null | tr ' ' '\n' | sed 's/^/  /'
+    fi
 }
 
 # Fonction pour tester la connectivité
@@ -33,7 +38,11 @@ test_connectivity() {
 # Fonction pour obtenir les statistiques réseau
 get_network_stats() {
     echo "=== Statistiques réseau ==="
-    ip -s link show
+    if command -v ip >/dev/null 2>&1; then
+        ip -s link show
+    else
+        echo "  iproute2 absent, statistiques par interface indisponibles"
+    fi
 }
 
 echo "=== Surveillance Réseau Système ==="
@@ -47,7 +56,11 @@ INTERFACES=$(get_network_interfaces)
 if [ -n "$INTERFACES" ]; then
     for iface in $INTERFACES; do
         echo "Interface: $iface"
-        ip addr show "$iface" | grep -E "(inet|ether)" | grep -v "inet6"
+        if command -v ip >/dev/null 2>&1; then
+            ip addr show "$iface" | grep -E "(inet|ether)" | grep -v "inet6"
+        else
+            echo "  iproute2 absent, détails de $iface indisponibles"
+        fi
     done
 else
     echo "Aucune interface réseau trouvée"
@@ -64,7 +77,7 @@ for dns in $DNS_SERVERS; do
     echo "Test DNS ($dns):"
     if test_connectivity "$dns" "$TIMEOUT_PING"; then
         PING_TIME=$(test_connectivity "$dns" "$TIMEOUT_PING")
-        if (( $(echo "$PING_TIME > $SEUIL_PING" | bc -l) )); then
+        if [ "$(awk -v a="$PING_TIME" -v b="$SEUIL_PING" 'BEGIN{print (a>b)?1:0}')" -eq 1 ]; then
             echo "[ALERTE] Latence élevée vers $dns: ${PING_TIME}ms"
             ALERTE=1
         else
@@ -80,7 +93,7 @@ done
 echo ""
 echo "Test résolution DNS:"
 if nslookup google.com > /dev/null 2>&1; then
-    echo "  OK - Résolution DNS fonctionnelle"
+    echo "  OK - Résolution DNS fonctionnelle
 else
     echo "[ALERTE] Problème de résolution DNS"
     ALERTE=1
