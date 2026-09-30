@@ -44,12 +44,12 @@ echo "Mémoire disponible: ${MEM_AVAILABLE_GB} Go / ${MEM_TOTAL_GB} Go total"
 # Vérifier les seuils
 ALERTE=0
 
-if (( $(echo "$MEM_USAGE > $SEUIL_MEMOIRE" | bc -l) )); then
+if [ "$(awk -v a="$MEM_USAGE" -v b="$SEUIL_MEMOIRE" 'BEGIN{print (a>b)?1:0}')" -eq 1 ]; then
     echo "[ALERTE] Utilisation mémoire > ${SEUIL_MEMOIRE}%"
     ALERTE=1
 fi
 
-if (( $(echo "$SWAP_USAGE > $SEUIL_SWAP" | bc -l) )); then
+if [ "$(awk -v a="$SWAP_USAGE" -v b="$SEUIL_SWAP" 'BEGIN{print (a>b)?1:0}')" -eq 1 ]; then
     echo "[ALERTE] Utilisation swap > ${SEUIL_SWAP}%"
     ALERTE=1
 fi
@@ -62,7 +62,8 @@ free -m
 # Top 5 des processus consommateurs de mémoire
 echo ""
 echo "--- Top 5 processus mémoire ---"
-ps aux --sort=-%mem | head -6 | column -t
+# column (util-linux) absent sur image minimale : awk fait le meme travail.
+    ps aux --sort=-%mem | head -6 | awk '{printf "%-8s %-6s %-6s %-6s %s\n", $1, $3, $4, $8, substr($0, index($0,$11))}'
 
 # Informations sur la pression mémoire (si disponible)
 echo ""
