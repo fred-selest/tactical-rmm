@@ -93,7 +93,7 @@ done
 echo ""
 echo "Test résolution DNS:"
 if nslookup google.com > /dev/null 2>&1; then
-    echo "  OK - Résolution DNS fonctionnelle
+    echo "  OK - Résolution DNS fonctionnelle"
 else
     echo "[ALERTE] Problème de résolution DNS"
     ALERTE=1
