@@ -25,7 +25,7 @@ Scripts Bash optimisés pour surveiller les NAS Synology sous DSM 7.x.
 
 ## Installation de l'agent
 
-Voir la documentation : [SYNOLOGY_AGENT_INSTALL.md](/SYNOLOGY_AGENT_INSTALL.md)
+Voir la documentation : [SYNOLOGY_AGENT_INSTALL.md](../../SYNOLOGY_AGENT_INSTALL.md)
 
 ```bash
 # Installation rapide

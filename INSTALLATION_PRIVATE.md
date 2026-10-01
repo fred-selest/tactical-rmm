@@ -449,7 +449,7 @@ Le script est **idempotent** - vous pouvez le relancer sans problème.
 
 ## 📚 Documentation complète
 
-- **[QUICK_INSTALL.md](QUICK_INSTALL.md)** - Installation rapide (5 min)
+- **[QUICK_INSTALL.md](START_HERE_PRIVATE.md)** - Installation rapide (5 min)
 - **[DASHBOARD_INTEGRATION_README.md](DASHBOARD_INTEGRATION_README.md)** - Architecture technique
 - **[integration/README.md](integration/README.md)** - Guide d'intégration détaillé
 - **[integration/docs/](integration/docs/)** - Documentation complète

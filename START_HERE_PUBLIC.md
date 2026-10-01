@@ -42,28 +42,28 @@ Voici tous les guides à votre disposition :
 
 | Fichier | Description | Durée |
 |---------|-------------|-------|
-| **[START_HERE.md](START_HERE.md)** | 👈 Vous êtes ici - Guide de démarrage | 2 min |
+| **[START_HERE.md](START_HERE_PUBLIC.md)** | 👈 Vous êtes ici - Guide de démarrage | 2 min |
 
 ### 🔧 Installation
 
 | Fichier | Description | Quand l'utiliser |
 |---------|-------------|------------------|
-| **[install-interactive.sh](install-interactive.sh)** | 🚀 Script d'installation interactif | **LANCER EN PREMIER** |
-| **[INSTALLATION_RMM_SELEST_INFO.md](INSTALLATION_RMM_SELEST_INFO.md)** | 📖 Guide complet d'installation | Pour comprendre chaque étape |
+| **[install-interactive.sh](install-interactive-public.sh)** | 🚀 Script d'installation interactif | **LANCER EN PREMIER** |
+| **[INSTALLATION_RMM_SELEST_INFO.md](INSTALLATION_GUIDE.md)** | 📖 Guide complet d'installation | Pour comprendre chaque étape |
 | **[INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)** | ⚡ Guide d'installation complet | Installation pas à pas |
 
 ### 🎨 Utilisation
 
 | Fichier | Description | Quand l'utiliser |
 |---------|-------------|------------------|
-| **[GUIDE_UTILISATION_ADMIN.md](GUIDE_UTILISATION_ADMIN.md)** | 🎨 Guide complet Admin Django | **Créer vos déploiements** |
+| **[GUIDE_UTILISATION_ADMIN.md](GUIDE_UTILISATION_ADMIN_PUBLIC.md)** | 🎨 Guide complet Admin Django | **Créer vos déploiements** |
 | **[integration/README.md](integration/README.md)** | 📖 README de l'intégration | Vue d'ensemble technique |
 
 ### 🧪 Tests et vérification
 
 | Fichier | Description | Quand l'utiliser |
 |---------|-------------|------------------|
-| **[test-installation.sh](test-installation.sh)** | 🧪 Tests automatiques | Vérifier l'installation |
+| **[test-installation.sh](test-installation-public.sh)** | 🧪 Tests automatiques | Vérifier l'installation |
 
 ### 🏗️ Architecture et développement
 
@@ -120,7 +120,7 @@ sudo systemctl restart rmm.service
 
 Ouvrez : **https://api.rmm.votre-domaine.com/admin/**
 
-Suivez le guide : **[GUIDE_UTILISATION_ADMIN.md](GUIDE_UTILISATION_ADMIN.md)**
+Suivez le guide : **[GUIDE_UTILISATION_ADMIN.md](GUIDE_UTILISATION_ADMIN_PUBLIC.md)**
 
 ### 5️⃣ Installer l'agent sur un serveur Linux
 
@@ -141,10 +141,10 @@ sudo ./install.sh
 
 #### "Je veux installer le module"
 → Lancez `sudo ./install-interactive.sh`
-→ Lisez [INSTALLATION_RMM_SELEST_INFO.md](INSTALLATION_RMM_SELEST_INFO.md)
+→ Lisez [INSTALLATION_RMM_SELEST_INFO.md](INSTALLATION_GUIDE.md)
 
 #### "Je veux créer mon premier déploiement"
-→ Lisez [GUIDE_UTILISATION_ADMIN.md](GUIDE_UTILISATION_ADMIN.md)
+→ Lisez [GUIDE_UTILISATION_ADMIN.md](GUIDE_UTILISATION_ADMIN_PUBLIC.md)
 
 #### "Je veux vérifier que tout fonctionne"
 → Lancez `./test-installation.sh`
@@ -340,7 +340,7 @@ sudo ./install-interactive.sh
 
 ### Option 2 : Installation guidée
 
-Suivez le guide complet : **[INSTALLATION_RMM_SELEST_INFO.md](INSTALLATION_RMM_SELEST_INFO.md)**
+Suivez le guide complet : **[INSTALLATION_RMM_SELEST_INFO.md](INSTALLATION_GUIDE.md)**
 
 ---
 
