@@ -1,7 +1,8 @@
 # Generated migration for adding signing tokens to LinuxDeployment model
 
-from django.db import migrations, models
 import secrets
+
+from django.db import migrations, models
 
 
 def generate_default_tokens(apps, schema_editor):
