@@ -119,7 +119,7 @@ if command -v systemctl >/dev/null 2>&1; then
     if command -v systemctl >/dev/null 2>&1; then
         systemctl cat rqworker 2>/dev/null | grep -E "ExecStart" | sed 's/^/  /' || echo "  (unité rqworker absente)"
     fi
-    if [ -d /var/run/rq 2>/dev/null ] || [ -d /var/lib/rq 2>/dev/null ]; then
+    if [ -d /var/run/rq ] || [ -d /var/lib/rq ]; then
         ls -la /var/run/rq /var/lib/rq 2>/dev/null | head -8 | sed 's/^/  /'
     fi
     "$PY" -c "

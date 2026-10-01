@@ -136,6 +136,38 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+head_ "9. ShellCheck — pas de nouvel avertissement"
+# Affecté : diag-rmm.sh v4Mergé triggers were caught by bash -n but SC1073
+# flagged a [ -d x 2>/dev/null ] that works in bash and in dash. Faux positif.
+#
+# Donc pas de règle « zéro avertissement » : 61 existent et sont pour la
+# plupart bénins, la suite serait rouge à jamais. Ni « zéro SC107x », ce serait
+# faux par construction.
+#
+# Une référence figée : un nouvel avertissement échoue, les connus passent.
+# Pour en accepter un : ajouter sa signature dans tests/.shellcheck-baseline,
+# en expliquant pourquoi dans la PR.
+if ! command -v shellcheck >/dev/null 2>&1; then
+    warn "shellcheck absent, test sauté"
+elif [ ! -f tests/.shellcheck-baseline ]; then
+    ko "tests/.shellcheck-baseline absent" "sans référence, impossible de distinguer nouveau et connu"
+else
+    cur=$(mktemp)
+    git ls-files '*.sh' | xargs shellcheck --severity=warning -f gcc 2>/dev/null \
+        | sed 's|^\./||; s|:[0-9]*:[0-9]*:|:|' | sort > "$cur"
+    nknown=$(grep -vc '^#' tests/.shellcheck-baseline)
+    nnew=$(comm -23 "$cur" <(grep -v '^#' tests/.shellcheck-baseline | sort) | grep -c . || true)
+    if [ "$nnew" -eq 0 ]; then
+        ok "aucun nouvel avertissement ($nknown connus, acceptés)"
+        printf '      %s\n' "$(sed -n '4,6p' tests/.shellcheck-baseline | sed 's/^# /      /')"
+    else
+        ko "$nnew nouvel(s) avertissement(s) shellcheck"
+        comm -23 "$cur" <(grep -v '^#' tests/.shellcheck-baseline | sort) | sed 's/^/      /'
+    fi
+    rm -f "$cur"
+fi
+
+# -----------------------------------------------------------------------------
 printf '\n\033[1m%s\033[0m\n' "────────────────────────────────────────────"
 printf '  %s%d passés\033[0m   %s%d échecs\033[0m   %s%d avertissements\033[0m\n' \
     "$GREEN" "$PASS" "$RED" "$FAIL" "$YELLOW" "$WARN"

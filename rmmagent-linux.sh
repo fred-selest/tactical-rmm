@@ -434,7 +434,10 @@ function agent_compile() {
     log "Repertoire source: $SRC_DIR"
 
     log "Compilation de l'agent pour $ARCH..."
-    cd "$SRC_DIR"
+    # Sans cette garde, un cd raté fait compiler le code du repertoire
+    # courant : go build produirait un binaire valide mais faux, et le
+    # script l installerait sans bruit.
+    cd "$SRC_DIR" || { log "ERREUR: cd $SRC_DIR a echoue"; exit 1; }
 
     # S'assurer que Go est dans le PATH
     export PATH=$PATH:$GO_PATH/bin
@@ -464,7 +467,7 @@ function agent_compile() {
         exit 1
     fi
 
-    cd "$TMPDIR"
+    cd "$TMPDIR" || exit 1
     rm -rf "$SRC_DIR"
 }
 
