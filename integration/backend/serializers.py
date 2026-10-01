@@ -4,10 +4,9 @@ Serializers Django REST Framework pour l'intégration de déploiement Linux
 """
 from __future__ import annotations
 
-from typing import Any
-
 from rest_framework import serializers
-from .models import LinuxDeployment, DeploymentLog
+
+from .models import DeploymentLog, LinuxDeployment
 
 
 class LinuxDeploymentSerializer(serializers.ModelSerializer):
