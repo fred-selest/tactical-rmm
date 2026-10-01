@@ -20,6 +20,16 @@ GO_INSTALLED_BY_SCRIPT=false
 LANG="${TACTICAL_LANG:-fr_FR}"
 GO_VERSION="1.21.6"
 
+# Source de l'agent compile localement.
+# Le script compilait "refs/heads/master" : la version obtenue ne dependait
+# donc d'aucun controle, et la doc amont rappelle que "the agent's version is
+# directly tied to the RMM's version". Compiler une branche mutable sur un
+# serveur de production expose aussi a executer du code non verifie.
+# On epingle sur un tag ; TACTICAL_AGENT_REF permet de surcharger.
+# v2.11.0 = LATEST_AGENT_VER de Tactical RMM 1.5.2 (api/tacticalrmm/tacticalrmm/settings.py).
+AGENT_REPO="https://github.com/amidaware/rmmagent"
+AGENT_REF="${TACTICAL_AGENT_REF:-v2.11.0}"
+
 # === COULEURS ===
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -386,7 +396,21 @@ function go_install() {
 function agent_compile() {
     log "Téléchargement du code source de rmmagent..."
 
-    if ! download_file "https://github.com/amidaware/rmmagent/archive/refs/heads/master.tar.gz" "$TMPDIR/rmmagent.tar.gz" "rmmagent source"; then
+    case "$AGENT_REF" in
+        v[0-9]*)
+            ARCHIVE_URL="$AGENT_REPO/archive/refs/tags/${AGENT_REF}.tar.gz"
+            ;;
+        *)
+            log "ATTENTION: AGENT_REF='$AGENT_REF' n'est pas un tag de version."
+            log "ATTENTION: le build ne sera pas reproductible (branche mutable)."
+            ARCHIVE_URL="$AGENT_REPO/archive/refs/heads/${AGENT_REF}.tar.gz"
+            ;;
+    esac
+    log "Source agent: $AGENT_REF -> $ARCHIVE_URL"
+    if ! download_file "$ARCHIVE_URL" "$TMPDIR/rmmagent.tar.gz" "rmmagent source ($AGENT_REF)"; then
+        log "ERREUR: telechargement de la source agent en echec"
+        log "       verifiez que le tag $AGENT_REF existe, ou surchargez :"
+        log "       TACTICAL_AGENT_REF=<tag|branche> $0"
         exit 1
     fi
 
@@ -397,8 +421,20 @@ function agent_compile() {
     fi
     rm "$TMPDIR/rmmagent.tar.gz"
 
+    # GitHub n'extrait pas toujours dans le meme repertoire :
+    #   refs/heads/master  -> rmmagent-master/
+    #   refs/tags/v2.11.0  -> rmmagent-2.11.0/
+    # Un chemin en dur cassait donc des que AGENT_REF etait un tag.
+    SRC_DIR=$(find "$TMPDIR" -maxdepth 1 -type d -name 'rmmagent-*' | head -1)
+    if [ -z "$SRC_DIR" ]; then
+        log "ERREUR: repertoire source introuvable apres extraction dans $TMPDIR"
+        log "       contenu: $(ls "$TMPDIR")"
+        exit 1
+    fi
+    log "Repertoire source: $SRC_DIR"
+
     log "Compilation de l'agent pour $ARCH..."
-    cd "$TMPDIR/rmmagent-master"
+    cd "$SRC_DIR"
 
     # S'assurer que Go est dans le PATH
     export PATH=$PATH:$GO_PATH/bin
@@ -429,7 +465,7 @@ function agent_compile() {
     fi
 
     cd "$TMPDIR"
-    rm -rf "$TMPDIR/rmmagent-master"
+    rm -rf "$SRC_DIR"
 }
 
 # === MESH AGENT (inchangé) ===
