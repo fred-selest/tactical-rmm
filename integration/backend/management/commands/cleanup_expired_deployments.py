@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from ...models import LinuxDeployment, DeploymentLog
+from ...models import DeploymentLog, LinuxDeployment
 
 
 class Command(BaseCommand):

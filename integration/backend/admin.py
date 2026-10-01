@@ -7,13 +7,13 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.contrib import admin
-from django.http import HttpRequest, HttpResponse
 from django.db.models import QuerySet
-from django.utils.html import format_html
+from django.http import HttpRequest, HttpResponse
 from django.urls import reverse
+from django.utils.html import format_html
 
 from .export import export_deployments_csv, export_deployments_json
-from .models import LinuxDeployment, DeploymentLog
+from .models import DeploymentLog, LinuxDeployment
 
 
 @admin.register(LinuxDeployment)
@@ -99,7 +99,8 @@ class LinuxDeploymentAdmin(admin.ModelAdmin):
         """Affiche un badge de statut"""
         if obj.is_expired():
             return format_html(
-                '<span style="background-color: #dc3545; color: white; padding: 3px 10px; border-radius: 3px;">Expiré</span>'
+                '<span style="background-color: #dc3545; color: white; padding: 3px 10px; '
+                'border-radius: 3px;">Expiré</span>'
             )
         return format_html(
             '<span style="background-color: #28a745; color: white; padding: 3px 10px; border-radius: 3px;">Actif</span>'
@@ -111,9 +112,12 @@ class LinuxDeploymentAdmin(admin.ModelAdmin):
         url = f"{obj.api_url}/clients/{obj.uuid}/deploy/linux/"
         return format_html(
             '<div style="margin-bottom: 10px;">'
-            '<input type="text" value="{}" id="deployment-url-{}" style="width: 100%; padding: 5px;" readonly>'
-            '<button onclick="navigator.clipboard.writeText(document.getElementById(\'deployment-url-{}\').value); '
-            'alert(\'URL copiée !\');" style="margin-top: 5px; padding: 5px 15px; cursor: pointer;">Copier l\'URL</button>'
+            '<input type="text" value="{}" id="deployment-url-{}" '
+            'style="width: 100%; padding: 5px;" readonly>'
+            '<button onclick="navigator.clipboard.writeText('
+            'document.getElementById(\'deployment-url-{}\').value); '
+            'alert(\'URL copiée !\');" style="margin-top: 5px; padding: 5px 15px; '
+            'cursor: pointer;">Copier l\'URL</button>'
             '</div>',
             url, obj.uuid, obj.uuid
         )
@@ -124,9 +128,12 @@ class LinuxDeploymentAdmin(admin.ModelAdmin):
         command = obj.get_install_command()
         return format_html(
             '<div style="margin-bottom: 10px;">'
-            '<textarea id="install-command-{}" style="width: 100%; height: 80px; padding: 5px; font-family: monospace;" readonly>{}</textarea>'
-            '<button onclick="navigator.clipboard.writeText(document.getElementById(\'install-command-{}\').value); '
-            'alert(\'Commande copiée !\');" style="margin-top: 5px; padding: 5px 15px; cursor: pointer;">Copier la commande</button>'
+            '<textarea id="install-command-{}" style="width: 100%; height: 80px; padding: 5px; '
+            'font-family: monospace;" readonly>{}</textarea>'
+            '<button onclick="navigator.clipboard.writeText('
+            'document.getElementById(\'install-command-{}\').value); '
+            'alert(\'Commande copiée !\');" style="margin-top: 5px; padding: 5px 15px; '
+            'cursor: pointer;">Copier la commande</button>'
             '</div>',
             obj.uuid, command, obj.uuid
         )

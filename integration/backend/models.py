@@ -4,11 +4,10 @@ Modèles Django pour l'intégration de déploiement Linux
 """
 from __future__ import annotations
 
-import uuid
-import hmac
 import hashlib
+import hmac
 import secrets
-from datetime import datetime, timedelta
+import uuid
 
 from django.db import models
 from django.utils import timezone

@@ -7,18 +7,18 @@ from __future__ import annotations
 import uuid
 from datetime import timedelta
 
-from django.utils import timezone
 from django.db.models import Sum
-from django.http import HttpResponse, JsonResponse, Http404, HttpRequest
-from rest_framework.views import APIView
-from rest_framework.request import Request
-from rest_framework.response import Response
+from django.http import Http404, HttpRequest, HttpResponse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import LinuxDeployment, DeploymentLog
-from .serializers import LinuxDeploymentSerializer
+from .models import DeploymentLog, LinuxDeployment
 from .notifications import notification_manager
+from .serializers import LinuxDeploymentSerializer
 from .throttling import DeploymentDownloadThrottle, InstallCallbackThrottle
 
 
@@ -441,7 +441,9 @@ class LinuxDeploymentStatsView(APIView):
         active_deployments: int = LinuxDeployment.objects.filter(expires_at__gt=timezone.now()).count()
         expired_deployments: int = LinuxDeployment.objects.filter(expires_at__lte=timezone.now()).count()
         total_downloads: int = LinuxDeployment.objects.aggregate(Sum('download_count'))['download_count__sum'] or 0
-        total_installations: int = LinuxDeployment.objects.aggregate(Sum('agents_installed'))['agents_installed__sum'] or 0
+        total_installations: int = LinuxDeployment.objects.aggregate(
+            Sum('agents_installed')
+        )['agents_installed__sum'] or 0
 
         return Response({
             'total_deployments': total_deployments,
