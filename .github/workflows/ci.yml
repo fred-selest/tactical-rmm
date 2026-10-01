@@ -28,18 +28,41 @@ jobs:
       - name: Run Flake8
         run: flake8 integration/backend/ --max-line-length=120 --ignore=E501,W503
 
-  lint-shell:
-    name: Lint Shell Scripts
+  # Remplace l'ancien « find | xargs shellcheck || true ».
+  # Le « || true » rendait le job incapable d'échouer : shellcheck signalait
+  # bien les erreurs (SC1073 sur une chaîne non fermée, SC2148 sur un fichier
+  # sans shebang), et le job passait quand même en vert.
+  test-scripts:
+    name: Tests des scripts (bloquant)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install ShellCheck
-        run: sudo apt-get install -y shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
 
-      - name: Run ShellCheck
+      # Syntaxe pure, avant tout le reste. Un `|| true` ici laisserait passer
+      # exactement le défaut qui a tué diag-rmm.sh.
+      - name: Syntaxe bash
         run: |
-          find . -name "*.sh" -not -path "./.git/*" | xargs shellcheck --severity=warning || true
+          fail=0
+          while IFS= read -r f; do
+            if ! bash -n "$f"; then
+              echo "::error file=$f::syntaxe invalide"
+              fail=1
+            fi
+          done < <(git ls-files '*.sh')
+          exit $fail
+
+      - name: Suite de tests des scripts
+        run: bash tests/test-scripts.sh
+
+      # En complément de la suite, qui ne couvre pas le style. severity=error
+      # pour rester bloquant sans noyer le dépôt sous les avertissements de
+      # style : à traiter séparément, sans le neutraliser.
+      - name: ShellCheck (erreurs)
+        run: |
+          git ls-files '*.sh' | xargs -r shellcheck --severity=error --external-sources
 
   test-python:
     name: Test Python
@@ -77,19 +100,100 @@ jobs:
         env:
           DATABASE_URL: postgres://tactical:test_password@localhost:5432/test_tacticalrmm
 
+  # L'ancien job faisait « echo "WARNING: ..." » puis sortait en 0 : il
+  # signalait sans jamais bloquer. Il affiche le rapport et échoue, avec une
+  # liste blanche explicite pour ne pas condamner des valeurs de test.
   security-check:
     name: Security Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check for secrets
+      - name: Secrets en dur
         run: |
-          # Vérifier qu'aucun secret n'est dans le code
-          if grep -rn "password\s*=\s*['\"][^'\"]*['\"]" integration/backend/ --include="*.py" | grep -v "test_" | grep -v "#"; then
-            echo "WARNING: Possible hardcoded password found"
+          set -uo pipefail
+          # Valeurs de test autorisees. Comparaison par valeur exacte :
+          # une correspondance par sous-chaine laissait passer
+          # MESH_TOKEN="abc123def456ghi789" parce que "abc123" y figure.
+          ALLOW_VALUES="test_password test_tacticalrmm test_secret_key_for_hmac test_secret test_token valid_token_123 wrong_token_456 changeme abc123 pipeline123456"
+
+          raw=$(grep -rniE "(password|secret|token|api_key)[[:space:]]*=[[:space:]]*[\"'][^\"']{6,}[\"']" \
+            --include="*.py" --include="*.sh" --include="*.yml" . \
+            | grep -vE "^\./tests/|^\./\.github/|^\./deploy-signing-tokens|^\./test-signing" \
+            | grep -vE "(^|/)test_[^/]*\.py:" || true)
+
+          hits=()
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            val=$(printf "%s" "$line" | sed -E "s/.*=[[:space:]]*//; s/^[^A-Za-z0-9_-]//; s/[^A-Za-z0-9_-]$//")
+            skip=0
+            for ok in $ALLOW_VALUES; do
+              [ "$val" = "$ok" ] && { skip=1; break; }
+            done
+            [ $skip -eq 0 ] && hits+=("$line")
+          done <<< "$raw"
+
+          if [ ${#hits[@]} -gt 0 ]; then
+            printf "%s\n" "${hits[@]}"
+            echo "::error::secrets potentiels detectes (voir liste ci-dessus)"
+            exit 1
+          fi
+          echo "aucun secret detecte"
+
+      - name: Fichiers volumineux
+        run: |
+          big=$(find . -type f -size +2M -not -path "./.git/*" -not -name "*.tar.gz" -not -name "*.zip" || true)
+          if [ -n "$big" ]; then
+            echo "$big"
+            echo "::error::fichiers de plus de 2 Mo versionnés"
+            exit 1
+          fi
+          echo "aucun fichier volumineux"
+
+      - name: Fichiers privés malgré .gitignore
+        run: |
+          # Cinq fichiers *private* sont suivis alors que .gitignore les
+          # liste. Signaler, pas bloquer : le retrait est une décision à part.
+          leaked=$(git ls-files | grep -i "private" || true)
+          if [ -n "$leaked" ]; then
+            echo "::warning::fichiers privés toujours suivis :"
+            echo "$leaked"
+          else
+            echo "aucun fichier privé suivi"
           fi
 
-      - name: Check for large binaries
+  markdown-links:
+    name: Liens Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Vérifier les liens relatifs
         run: |
-          find . -size +5M -not -path "./.git/*" -exec ls -lh {} \;
+          pip install -q linkchecker || true
+          python3 - <<'PY'
+          import os, re, sys
+          # Liens relatifs uniquement : les liens externes ne sont pas
+          # testés ici, ils casseraient sur l'indisponibilité du réseau.
+          bad = []
+          pat = re.compile(r'\[[^\]]*\]\((?!https?://|#|mailto:)([^)#\s]+)')
+          for root, dirs, files in os.walk('.'):
+              dirs[:] = [d for d in dirs if d not in ('.git', 'node_modules')]
+              for fn in files:
+                  if not fn.endswith('.md'):
+                      continue
+                  p = os.path.join(root, fn)
+                  try:
+                      txt = open(p, encoding='utf-8', errors='ignore').read()
+                  except OSError:
+                      continue
+                  for m in pat.finditer(txt):
+                      t = m.group(1)
+                      if not os.path.exists(os.path.normpath(os.path.join(root, t))):
+                          bad.append(f"{p}: {t}")
+          if bad:
+              for b in bad[:40]:
+                  print(f"::error file={b.split(':')[0]}::lien cassé -> {b.split(': ',1)[1]}")
+              print(f"\n{len(bad)} lien(s) relatif(s) cassé(s)")
+              sys.exit(1)
+          print("tous les liens relatifs sont valides")
+          PY
