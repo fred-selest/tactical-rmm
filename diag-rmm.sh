@@ -3,38 +3,64 @@
 # Usage : sudo bash diag-rmm.sh
 # Coller la sortie entière pour analyse.
 #
-# v2 : chaque section est tolérante à l'échec. Une section qui échoue
-# affiche son erreur et le diagnostic continue, au lieu de tout interrompre.
+# v3 : la v2 sélectionnait l'installation sur la seule existence du
+# répertoire. Or /opt/tacticalrmm existe SANS manage.py : il gagne à tort,
+# /rmm n'est jamais essayé, et les sections 4, 5, 8 et 9 sortent vides.
 
 # NE PAS utiliser d'apostrophe dans un ${VAR:-defaut} : bash y reprend ses
 # règles de quoting, le guillemet ouvre une chaîne qui avale le } et file
-# jusqu'à la fin du fichier. C'est ce qui tuait la v1 à la ligne 45.
+# jusqu'à la fin du fichier.
 
 sep() { printf '\n════════ %s ════════\n' "$1"; }
-try()  { "$@" 2>&1 | sed 's/^/  /'; return 0; }
 
 # --- Localisation de l'installation -----------------------------------------
 sep "1. VERSION TRMM"
 RMM=""
 for cand in /opt/tacticalrmm/api/tacticalrmm /rmm/api/tacticalrmm; do
-    [ -d "$cand" ] && RMM="$cand" && break
+    if [ -f "$cand/manage.py" ]; then RMM="$cand"; break; fi
 done
+# Repli : le dossier existe mais manage.py est ailleurs
+if [ -z "$RMM" ]; then
+    for cand in /opt/tacticalrmm/api/tacticalrmm /rmm/api/tacticalrmm; do
+        [ -d "$cand" ] && RMM="$cand" && break
+    done
+    [ -n "$RMM" ] && echo "  ATTENTION: manage.py introuvable sous $RMM"
+fi
 if [ -z "$RMM" ]; then
     echo "  TRMM introuvable (cherché dans /opt/tacticalrmm et /rmm)"
     exit 1
 fi
-echo "  chemin: $RMM"
+echo "  chemin retenu: $RMM"
+
+# Ce qui existe réellement dans chaque arborescence : sans cela, impossible de
+# savoir pourquoi un chemin l'emporte sur l'autre.
+for d in /opt/tacticalrmm/api/tacticalrmm /rmm/api/tacticalrmm; do
+    [ -d "$d" ] || continue
+    printf '  %-34s manage.py=%s core/agent_linux.sh=%s\n' "$d" \
+        "$([ -f "$d/manage.py" ] && echo OUI || echo non)" \
+        "$([ -f "$d/core/agent_linux.sh" ] && echo OUI || echo non)"
+done
 
 # --- Localisation de l'interpréteur ----------------------------------------
-# La v1 figeait /opt/tacticalrmm/api/env/bin/python. Sur cette machine ce
-# chemin n'existe pas, et les 4 appels manage.py ont échoué avec
-# "command not found" sans rien dire du vrai problème.
 echo "  -- interpréteur --"
 PY=""
+# Le PATH du service est l'information la plus fiable : c'est lui que le
+# serveur utilise réellement pour lancer l'API.
+SVC_PATH=""
+if command -v systemctl >/dev/null 2>&1; then
+    SVC_PATH=$(systemctl show rmm.service -p Environment --value 2>/dev/null \
+        | tr ' ' '\n' | sed -n 's/^PATH=//p' | cut -d: -f1)
+    [ -n "$SVC_PATH" ] && echo "  PATH rmm.service: $SVC_PATH"
+fi
+
 for cand in \
+    ${SVC_PATH:+"$SVC_PATH/python"} \
+    ${SVC_PATH:+"$SVC_PATH/python3"} \
     "$RMM/../env/bin/python" \
     "$RMM/../env/bin/python3" \
-    "$(dirname "$RMM")/env/bin/python3" \
+    /rmm/api/env/bin/python \
+    /rmm/api/env/bin/python3 \
+    /opt/tacticalrmm/api/env/bin/python \
     /usr/bin/python3 \
     /usr/bin/python
 do
@@ -44,12 +70,6 @@ if [ -n "$PY" ]; then
     echo "  python: $PY  ($("$PY" -V 2>&1))"
 else
     echo "  AUCUN interpréteur python trouvé"
-fi
-
-# Environnement python du service, s'il existe
-if command -v systemctl >/dev/null 2>&1; then
-    SVC_ENV=$(systemctl show rmm.service -p Environment --value 2>/dev/null | tr ' ' '\n' | grep -i 'VIRTUAL_ENV\|PATH=' | head -2)
-    [ -n "$SVC_ENV" ] && echo "  env rmm.service: $SVC_ENV"
 fi
 
 mm() {
@@ -79,16 +99,37 @@ mm version
 sep "2. MESH CENTRAL"
 if command -v systemctl >/dev/null 2>&1; then
     for unit in meshcentral mongod; do
-        printf '  %s: %s\n' "$unit" "$(systemctl is-active $unit 2>/dev/null || echo absent)"
+        # is-active affiche "inactive" ET renvoie !=0 : sans ce cas, le
+        # "|| echo absent" s'ajoute en doublon sous la vraie valeur.
+        st=$(systemctl is-active "$unit" 2>/dev/null); rc=$?
+        printf '  %s: %s\n' "$unit" "$([ $rc -eq 0 ] && echo "${st:-active}" || echo "${st:-absent}")"
     done
     echo "  -- services rmm --"
     for unit in rmm.service nginx rqworker; do
-        printf '  %s: %s\n' "$unit" "$(systemctl is-active $unit 2>/dev/null || echo absent)"
+        st=$(systemctl is-active "$unit" 2>/dev/null); rc=$?
+        printf '  %s: %s\n' "$unit" "$([ $rc -eq 0 ] && echo "${st:-active}" || echo "${st:-absent}")"
     done
     echo "  -- ports --"
     (ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null) \
         | grep -E ':(80|443|8000|8081|4222|27017|6379)\b' \
         | sed 's/^/  /' || echo "  (aucun port attendu trouvé)"
+
+    # mongod inactif sans port 27017 peut etre normal (conteneur, service
+    # renomme, Mongo externe) ou un vrai defaut. On distingue les deux.
+    echo "  -- mongo --"
+    for ms in mongod mongodb mongo; do
+        st=$(systemctl is-active "$ms" 2>/dev/null); rc=$?
+        [ $rc -eq 0 ] && echo "  service $ms: ${st:-active}"
+    done
+    if ss -tln 2>/dev/null | grep -q ':27017'; then
+        echo "  port 27017: en ecoute"
+    else
+        echo "  port 27017: AUCUN service en ecoute"
+    fi
+    for cf in /etc/mongod.conf /opt/tacticalrmm/api/mongo.conf /rmm/api/mongo.conf; do
+        [ -f "$cf" ] && echo "  config: $cf"
+    done
+    grep -rhn 'MONGODB\|MONGO_' "$RMM/tacticalrmm/settings.py" 2>/dev/null | sed 's/^/  /'
 else
     echo "  systemctl absent"
 fi
