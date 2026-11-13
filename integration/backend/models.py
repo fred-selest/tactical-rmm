@@ -7,9 +7,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import shlex
 import uuid
 
 from django.db import models
+from django.db.models import F
 from django.utils import timezone
 
 
@@ -109,14 +111,22 @@ class LinuxDeployment(models.Model):
         return timezone.now() > self.expires_at
 
     def increment_download(self) -> None:
-        """Incrémente le compteur de téléchargements"""
-        self.download_count += 1
-        self.last_downloaded = timezone.now()
-        self.save(update_fields=['download_count', 'last_downloaded'])
+        """Incrémente le compteur de téléchargements (atomique)"""
+        now = timezone.now()
+        LinuxDeployment.objects.filter(pk=self.pk).update(
+            download_count=F('download_count') + 1,
+            last_downloaded=now,
+        )
+        self.refresh_from_db(fields=['download_count', 'last_downloaded'])
+
+    def increment_installed(self) -> None:
+        """Incrémente le compteur d'agents installés (atomique)"""
+        LinuxDeployment.objects.filter(pk=self.pk).update(agents_installed=F('agents_installed') + 1)
+        self.refresh_from_db(fields=['agents_installed'])
 
     def get_install_command(self) -> str:
-        """Génère la commande d'installation"""
-        deployment_url = f"{self.api_url}/clients/{self.uuid}/deploy/linux/"
+        """Génère la commande d'installation (URL signée, correctement échappée)"""
+        deployment_url = shlex.quote(self.get_signed_url())
         return f"""wget {deployment_url} -O install-rmm-agent.sh
 chmod +x install-rmm-agent.sh
 sudo ./install-rmm-agent.sh"""
@@ -171,7 +181,7 @@ sudo ./install-rmm-agent.sh"""
             True si la signature est valide
         """
         expected_signature = self.generate_signature(data_to_sign)
-        return hmac.compare_digest(expected_signature, signature)
+        return hmac.compare_digest(expected_signature.encode(), str(signature).encode())
 
     def verify_signature(self, data_to_verify: str, provided_signature: str) -> bool:
         """
@@ -187,29 +197,61 @@ sudo ./install-rmm-agent.sh"""
         expected_signature = self.generate_signature(data_to_verify)
         return hmac.compare_digest(expected_signature, provided_signature)
 
+    def signature_payload(self, timestamp: int | str) -> str:
+        """Chaîne signée pour l'URL de téléchargement : ``<uuid>:<timestamp>``"""
+        return f"{self.uuid}:{timestamp}"
+
     def get_signed_url(self) -> str:
         """
-        Génère une URL signée pour le téléchargement du script
+        Génère une URL signée pour le téléchargement du script.
+
+        Le paramètre ``t`` est le timestamp Unix d'expiration du déploiement ;
+        la signature couvre ``<uuid>:<t>``, ce qui empêche de prolonger le lien.
 
         Returns:
             URL complète avec signature HMAC
         """
-        base_url = f"{self.api_url}/clients/{self.uuid}/deploy/linux/"
+        base_url = f"{self.api_url.rstrip('/')}/clients/{self.uuid}/deploy/linux/"
+        timestamp = int(self.expires_at.timestamp())
+        signature = self.generate_signature(self.signature_payload(timestamp))
+        return f"{base_url}?t={timestamp}&sig={signature}"
 
-        # Données à signer : uuid + signing_token + timestamp de création
-        data_to_sign = f"{self.uuid}{self.signing_token}{self.created_at.isoformat()}"
-        signature = self.generate_signature(data_to_sign)
+    def check_signed_request(self, timestamp: str | None, signature: str | None) -> tuple[bool, int, str]:
+        """
+        Valide les paramètres ``t`` et ``sig`` d'une URL de téléchargement.
 
-        return f"{base_url}?token={self.signing_token}&sig={signature}"
+        Returns:
+            (valide, code HTTP en cas d'échec, message)
+        """
+        if not timestamp or not signature:
+            return False, 403, "Signature manquante"
+        if not self.validate_signature(self.signature_payload(timestamp), signature):
+            return False, 403, "Signature invalide"
+        try:
+            ts = int(timestamp)
+        except ValueError:
+            return False, 400, "Timestamp invalide"
+        if ts < int(timezone.now().timestamp()):
+            return False, 410, "Lien expiré"
+        return True, 200, "OK"
 
     def use_one_time_token(self) -> None:
-        """Marque le one-time token comme utilisé"""
-        if self.token_used:
+        """Marque le one-time token comme utilisé (atomique, sans condition de course)"""
+        now = timezone.now()
+        updated = LinuxDeployment.objects.filter(pk=self.pk, token_used=False).update(
+            token_used=True,
+            token_used_at=now,
+        )
+        if not updated:
             raise ValueError("Ce token a déjà été utilisé")
-
         self.token_used = True
-        self.token_used_at = timezone.now()
-        self.save(update_fields=['token_used', 'token_used_at'])
+        self.token_used_at = now
+
+    def check_one_time_token(self, provided: str | None) -> bool:
+        """Compare le one-time token fourni en temps constant"""
+        if not provided or not self.one_time_token:
+            return False
+        return hmac.compare_digest(str(provided).encode(), self.one_time_token.encode())
 
     def is_token_valid(self) -> bool:
         """Vérifie si le one-time token est toujours valide"""

@@ -27,5 +27,6 @@ target-version = "py38"
 select = ["E", "F", "W", "I"]
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "tacticalrmm.settings"
+DJANGO_SETTINGS_MODULE = "tests.settings"
+testpaths = ["tests"]
 python_files = ["test_*.py"]
