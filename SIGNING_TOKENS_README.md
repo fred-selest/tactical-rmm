@@ -177,9 +177,11 @@ if install_status == 'success':
 
 ### Exécuter les tests unitaires
 
+Depuis la racine du dépôt (Django et DRF sont installés par `requirements.txt`) :
+
 ```bash
-cd integration/backend
-python test_signing_tokens.py
+pip install -r requirements.txt pytest pytest-django
+python -m pytest tests/test_models.py tests/test_security.py -v
 ```
 
 ### Tests couverts

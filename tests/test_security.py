@@ -11,7 +11,6 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -19,57 +18,16 @@ from rest_framework.test import APIClient
 from integration.backend.models import DeploymentLog, LinuxDeployment
 from integration.backend.views import generate_install_script
 
+from .conftest import callback_path, make_deployment, signed_path
+
 pytestmark = pytest.mark.django_db
 
 CREATE_URL = '/api/v3/linux-deployments/create/'
 LIST_URL = '/api/v3/linux-deployments/'
 
 
-@pytest.fixture(autouse=True)
-def _clear_cache():
-    cache.clear()  # remet à zéro les compteurs de throttling
-    yield
-    cache.clear()
-
-
-@pytest.fixture
-def admin_client():
-    user = get_user_model().objects.create_superuser('admin', 'admin@example.test', 'pw')
-    client = APIClient()
-    client.force_authenticate(user)
-    return client
-
-
-@pytest.fixture
-def anon_client():
-    return APIClient()
-
-
-def make_deployment(**overrides) -> LinuxDeployment:
-    values = dict(
-        client_id=1, client_name='Client', site_id=1, site_name='Site',
-        api_url='https://api.example.test', mesh_url='https://mesh.example.test/x',
-        auth_key='agentauthkey',
-        signing_token=LinuxDeployment.generate_signing_token(),
-        one_time_token=LinuxDeployment.generate_one_time_token(),
-        signature_secret=LinuxDeployment.generate_signature_secret(),
-        expires_at=timezone.now() + timedelta(days=30), created_by='admin',
-    )
-    values.update(overrides)
-    return LinuxDeployment.objects.create(**values)
-
-
 def script_path(dep: LinuxDeployment) -> str:
     return f'/clients/{dep.uuid}/deploy/linux/'
-
-
-def signed_path(dep: LinuxDeployment) -> str:
-    parsed = urlparse(dep.get_signed_url())
-    return f'{parsed.path}?{parsed.query}'
-
-
-def callback_path(dep: LinuxDeployment) -> str:
-    return f'/api/v3/linux-deployments/{dep.uuid}/installed/'
 
 
 # --- 1. Injection de commandes dans le script généré -------------------------
@@ -353,5 +311,3 @@ def test_install_command_is_shell_safe():
     dep = make_deployment()
     cmd = dep.get_install_command()
     assert "'" + dep.get_signed_url() + "'" in cmd  # l'URL contient '&' : elle doit être quotée
-
-

@@ -24,6 +24,12 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 ### 🧪 Tests
 
 - Nouveau harnais Django (`tests/settings.py`) et 33 tests de non-régression exécutant le vrai code (`pytest`).
+- Les anciens tests à base de mocks (`integration/backend/test_*.py`), qui ne testaient pas le code, sont remplacés par 103 tests réels : modèles, API, exports, notifications, commande `cleanup_expired_deployments` et concurrence.
+- CI : matrice SQLite / PostgreSQL, tests de concurrence (threads) sur PostgreSQL, contrôle `makemigrations --check`.
+
+### 🔒 Sécurité (suite)
+
+- **Injection de formules CSV** : les cellules texte de l'export commençant par `=`, `+`, `-`, `@`, tabulation ou retour chariot sont préfixées d'une apostrophe.
 
 ## [3.0.0] - 2026-01-21
 

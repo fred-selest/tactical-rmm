@@ -15,6 +15,16 @@ from django.http import HttpResponse, JsonResponse
 
 from .models import LinuxDeployment
 
+# Préfixes interprétés comme des formules par Excel / LibreOffice (injection CSV)
+_FORMULA_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
+
+
+def _csv_safe(value: Any) -> Any:
+    """Neutralise une cellule texte qui serait interprétée comme une formule."""
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
 
 def export_deployments_csv(queryset: Any | None = None) -> HttpResponse:
     """
@@ -51,8 +61,8 @@ def export_deployments_csv(queryset: Any | None = None) -> HttpResponse:
     for deployment in queryset:
         writer.writerow([
             str(deployment.uuid),
-            deployment.client_name,
-            deployment.site_name,
+            _csv_safe(deployment.client_name),
+            _csv_safe(deployment.site_name),
             deployment.agent_type,
             deployment.arch,
             'Expiré' if deployment.is_expired() else 'Actif',
@@ -60,7 +70,7 @@ def export_deployments_csv(queryset: Any | None = None) -> HttpResponse:
             deployment.agents_installed,
             deployment.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             deployment.expires_at.strftime('%Y-%m-%d %H:%M:%S'),
-            deployment.created_by,
+            _csv_safe(deployment.created_by),
         ])
 
     response = HttpResponse(output.getvalue(), content_type='text/csv; charset=utf-8')
