@@ -27,6 +27,15 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 - Les anciens tests à base de mocks (`integration/backend/test_*.py`), qui ne testaient pas le code, sont remplacés par 103 tests réels : modèles, API, exports, notifications, commande `cleanup_expired_deployments` et concurrence.
 - CI : matrice SQLite / PostgreSQL, tests de concurrence (threads) sur PostgreSQL, contrôle `makemigrations --check`.
 
+### ♻️ Refactorisation
+
+- **Installateurs** (`install-backend.sh`, `install-automated.sh`, `install-interactive-public.sh`) : ils ne copiaient que 5 modules alors que `views.py` importe aussi `throttling`, `notifications` et `security` → `ImportError` à l'installation. Ils copient désormais tous les modules, le modèle de script et les commandes de gestion ; un test vérifie que tout import relatif est copié.
+- **Notifications asynchrones** : envoi dans un pool de threads après commit, un webhook lent ne bloque plus le callback public ; réponses HTTP fermées ; handlers factorisés.
+- **Script d'installation** sorti de la f-string Python vers `install_script.sh.tpl` (sortie identique, marqueurs vérifiés, fins de ligne normalisées).
+- **QuerySet** `LinuxDeployment.objects.active() / expired() / for_client() / with_status()` à la place des filtres dupliqués.
+- **Index** sur `expires_at` et `(client_id, site_id)` (migration `0003_add_indexes`).
+- Suppression du doublon `verify_signature` (utiliser `validate_signature`).
+
 ### 🔒 Sécurité (suite)
 
 - **Injection de formules CSV** : les cellules texte de l'export commençant par `=`, `+`, `-`, `@`, tabulation ou retour chariot sont préfixées d'une apostrophe.

@@ -49,3 +49,5 @@ REST_FRAMEWORK = {
 LINUX_DEPLOYMENT_API_URL = 'https://api.example.test'
 LINUX_DEPLOYMENT_MESH_URL = 'https://mesh.example.test/meshagents?id=abc'
 LINUX_DEPLOYMENT_TRUSTED_PROXY_COUNT = 0
+# Envoi synchrone : les tests vérifient les payloads immédiatement
+LINUX_DEPLOYMENT_NOTIFICATIONS_ASYNC = False

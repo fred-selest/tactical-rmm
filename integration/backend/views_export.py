@@ -5,7 +5,6 @@ Endpoints pour télécharger les données en CSV ou JSON.
 from __future__ import annotations
 
 from django.http import HttpResponse
-from django.utils import timezone
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
@@ -19,15 +18,9 @@ def _filtered_queryset(request: Request):
 
     client_id = request.query_params.get('client_id')
     if client_id and client_id.isdigit():
-        queryset = queryset.filter(client_id=client_id)
+        queryset = queryset.for_client(client_id)
 
-    status_filter = request.query_params.get('status')
-    if status_filter == 'active':
-        queryset = queryset.filter(expires_at__gt=timezone.now())
-    elif status_filter == 'expired':
-        queryset = queryset.filter(expires_at__lte=timezone.now())
-
-    return queryset
+    return queryset.with_status(request.query_params.get('status'))
 
 
 class ExportDeploymentsCSVView(APIView):

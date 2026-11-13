@@ -58,11 +58,19 @@ echo -e "${GREEN}✓ Dossier créé${NC}"
 
 # Copier les fichiers backend
 echo -e "${BLUE}[3/8] Copie des fichiers backend...${NC}"
-cp "$SCRIPT_DIR/integration/backend/models.py" "$RMM_PATH/linux_deployments/"
-cp "$SCRIPT_DIR/integration/backend/views.py" "$RMM_PATH/linux_deployments/"
-cp "$SCRIPT_DIR/integration/backend/serializers.py" "$RMM_PATH/linux_deployments/"
-cp "$SCRIPT_DIR/integration/backend/urls.py" "$RMM_PATH/linux_deployments/"
-cp "$SCRIPT_DIR/integration/backend/admin.py" "$RMM_PATH/linux_deployments/"
+# Tous les fichiers dont l'app a besoin à l'exécution (tests et README exclus).
+# tests/test_installers.py vérifie que chaque import relatif y figure.
+BACKEND_FILES=(
+    models.py views.py serializers.py urls.py admin.py
+    security.py throttling.py notifications.py export.py views_export.py
+    install_script.sh.tpl
+)
+for backend_file in "${BACKEND_FILES[@]}"; do
+    cp "$SCRIPT_DIR/integration/backend/$backend_file" "$RMM_PATH/linux_deployments/"
+done
+mkdir -p "$RMM_PATH/linux_deployments/management/commands"
+cp "$SCRIPT_DIR/integration/backend/management/__init__.py" "$RMM_PATH/linux_deployments/management/"
+cp "$SCRIPT_DIR/integration/backend/management/commands/"*.py "$RMM_PATH/linux_deployments/management/commands/"
 echo -e "${GREEN}✓ Fichiers copiés${NC}"
 
 # Créer __init__.py

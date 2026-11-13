@@ -37,9 +37,7 @@ class Command(BaseCommand):
         dry_run = options['dry_run']
         cutoff_date = timezone.now() - timedelta(days=days)
 
-        expired_deployments = LinuxDeployment.objects.filter(
-            expires_at__lt=cutoff_date
-        )
+        expired_deployments = LinuxDeployment.objects.expired_before(cutoff_date)
         count = expired_deployments.count()
 
         if count == 0:
