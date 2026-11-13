@@ -8,6 +8,8 @@ import re
 import shlex
 import uuid
 from datetime import timedelta
+from functools import lru_cache
+from pathlib import Path
 
 from django.conf import settings
 from django.db.models import Count, Q, Sum
@@ -140,13 +142,13 @@ class LinuxDeploymentListView(APIView):
         if client_id:
             if not client_id.isdigit():
                 return Response({'error': 'client_id invalide'}, status=status.HTTP_400_BAD_REQUEST)
-            deployments = deployments.filter(client_id=client_id)
+            deployments = deployments.for_client(client_id)
 
         site_id = request.query_params.get('site_id')
         if site_id:
             if not site_id.isdigit():
                 return Response({'error': 'site_id invalide'}, status=status.HTTP_400_BAD_REQUEST)
-            deployments = deployments.filter(site_id=site_id)
+            deployments = deployments.for_site(site_id)
 
         serializer = LinuxDeploymentSerializer(deployments, many=True, context={'request': request})
         return Response(serializer.data)
@@ -229,99 +231,61 @@ class LinuxDeploymentScriptView(APIView):
         return response
 
 
+INSTALL_SCRIPT_TEMPLATE = Path(__file__).with_name('install_script.sh.tpl')
+_PLACEHOLDER = re.compile(r'\{\{([A-Z_]+)\}\}')
+
+
+@lru_cache(maxsize=1)
+def _load_install_template() -> str:
+    # Normalise les fins de ligne : un modèle en CRLF casserait bash côté serveur
+    return INSTALL_SCRIPT_TEMPLATE.read_bytes().decode('utf-8').replace('\r\n', '\n')
+
+
+def render_install_template(template: str, values: dict[str, str]) -> str:
+    """
+    Remplace les ``{{NOM}}`` du modèle. Échoue si un marqueur n'a pas de
+    valeur, ou si une valeur fournie n'est utilisée nulle part (faute de frappe).
+    """
+    used = set(_PLACEHOLDER.findall(template))
+    missing = used - values.keys()
+    unused = values.keys() - used
+    if missing or unused:
+        raise KeyError(f"Modèle de script incohérent : manquants={sorted(missing)} inutilisés={sorted(unused)}")
+    return _PLACEHOLDER.sub(lambda m: values[m.group(1)], template)
+
+
 def generate_install_script(deployment: LinuxDeployment) -> str:
     """
-    Génère le script d'installation avec les paramètres pré-configurés.
+    Génère le script d'installation à partir de ``install_script.sh.tpl``.
 
-    Toutes les valeurs dynamiques sont échappées avec ``shlex.quote`` et
-    assignées à des variables en tête de script : aucune donnée utilisateur
-    n'est interprétée par le shell.
+    Toutes les valeurs dynamiques sont échappées avec ``shlex.quote`` (ou
+    converties en entier) avant insertion : aucune donnée utilisateur n'est
+    interprétée par le shell. Les valeurs reprises en commentaire sont
+    débarrassées des caractères de contrôle (pas de retour à la ligne).
     """
     q = shlex.quote
     callback_url = f"{deployment.api_url.rstrip('/')}/api/v3/linux-deployments/{deployment.uuid}/installed/"
 
-    def comment(value: object) -> str:
-        return _clean_text(value)
-
-    return f"""#!/bin/bash
-#
-# Script d'installation automatique de l'agent Tactical RMM pour Linux
-# Généré automatiquement - Ne pas modifier
-#
-# Client: {comment(deployment.client_name)}
-# Site: {comment(deployment.site_name)}
-# Type: {comment(deployment.agent_type)}
-# Architecture: {comment(deployment.arch)}
-# Date d'expiration: {deployment.expires_at.strftime('%Y-%m-%d %H:%M:%S')}
-#
-
-set -euo pipefail
-
-CLIENT_NAME={q(deployment.client_name)}
-SITE_NAME={q(deployment.site_name)}
-AGENT_TYPE={q(deployment.agent_type)}
-BASE_SCRIPT_URL={q(deployment.get_script_url())}
-MESH_URL={q(deployment.mesh_url or '')}
-API_URL={q(deployment.api_url)}
-CLIENT_ID={int(deployment.client_id)}
-SITE_ID={int(deployment.site_id)}
-AUTH_KEY={q(deployment.auth_key)}
-CALLBACK_URL={q(callback_url)}
-ONE_TIME_TOKEN={q(deployment.one_time_token)}
-
-RED='\\033[0;31m'
-GREEN='\\033[0;32m'
-YELLOW='\\033[1;33m'
-NC='\\033[0m'
-
-printf '%b\\n' "${{GREEN}}========================================${{NC}}"
-printf '%b\\n' "${{GREEN}}Installation de l'agent Tactical RMM${{NC}}"
-printf '%b\\n' "${{GREEN}}========================================${{NC}}"
-printf '\\nClient: %s\\nSite: %s\\nType: %s\\n\\n' "$CLIENT_NAME" "$SITE_NAME" "$AGENT_TYPE"
-
-if [ "$EUID" -ne 0 ]; then
-    printf '%b\\n' "${{RED}}Ce script doit être exécuté en tant que root${{NC}}"
-    echo "Utilisez: sudo $0"
-    exit 1
-fi
-
-WORKDIR="$(mktemp -d)"
-trap 'rm -rf "$WORKDIR"' EXIT
-INSTALLER="$WORKDIR/rmmagent-install.sh"
-
-notify() {{
-    curl -fsS -X POST "$CALLBACK_URL" \\
-        --data-urlencode "hostname=$(hostname)" \\
-        --data-urlencode "status=$1" \\
-        --data-urlencode "one_time_token=$ONE_TIME_TOKEN" >/dev/null || true
-}}
-
-printf '%b\\n' "${{YELLOW}}Téléchargement du script d'installation...${{NC}}"
-if ! wget -q "$BASE_SCRIPT_URL" -O "$INSTALLER"; then
-    printf '%b\\n' "${{RED}}Erreur: Impossible de télécharger le script d'installation${{NC}}"
-    notify failed
-    exit 1
-fi
-chmod 700 "$INSTALLER"
-
-printf '%b\\n' "${{YELLOW}}Installation de l'agent...${{NC}}"
-if "$INSTALLER" install "$MESH_URL" "$API_URL" "$CLIENT_ID" "$SITE_ID" "$AUTH_KEY" "$AGENT_TYPE"; then
-    printf '%b\\n' "${{GREEN}}Installation terminée avec succès !${{NC}}"
-    notify success
-    echo ""
-    echo "L'agent devrait apparaître dans le dashboard dans quelques instants."
-    printf 'Vérifiez dans: %s > %s\\n' "$CLIENT_NAME" "$SITE_NAME"
-else
-    printf '%b\\n' "${{RED}}Erreur lors de l'installation${{NC}}"
-    notify failed
-    exit 1
-fi
-
-echo ""
-printf '%b\\n' "${{GREEN}}========================================${{NC}}"
-printf '%b\\n' "${{GREEN}}Installation terminée${{NC}}"
-printf '%b\\n' "${{GREEN}}========================================${{NC}}"
-"""
+    return render_install_template(_load_install_template(), {
+        # Commentaires d'en-tête (non interprétés)
+        'CLIENT_NAME_COMMENT': _clean_text(deployment.client_name),
+        'SITE_NAME_COMMENT': _clean_text(deployment.site_name),
+        'AGENT_TYPE_COMMENT': _clean_text(deployment.agent_type),
+        'ARCH_COMMENT': _clean_text(deployment.arch),
+        'EXPIRES_AT': deployment.expires_at.strftime('%Y-%m-%d %H:%M:%S'),
+        # Affectations shell (échappées)
+        'CLIENT_NAME': q(deployment.client_name),
+        'SITE_NAME': q(deployment.site_name),
+        'AGENT_TYPE': q(deployment.agent_type),
+        'BASE_SCRIPT_URL': q(deployment.get_script_url()),
+        'MESH_URL': q(deployment.mesh_url or ''),
+        'API_URL': q(deployment.api_url),
+        'CLIENT_ID': str(int(deployment.client_id)),
+        'SITE_ID': str(int(deployment.site_id)),
+        'AUTH_KEY': q(deployment.auth_key),
+        'CALLBACK_URL': q(callback_url),
+        'ONE_TIME_TOKEN': q(deployment.one_time_token),
+    })
 
 
 class LinuxDeploymentInstallCallbackView(APIView):

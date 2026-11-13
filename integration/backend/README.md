@@ -12,6 +12,7 @@ backend/
 ├── urls.py            # Configuration des URLs
 ├── admin.py           # Interface d'administration Django
 ├── security.py        # IP cliente fiable + permissions par client
+├── install_script.sh.tpl  # Modèle du script bash servi aux serveurs Linux
 └── README.md          # Ce fichier
 ```
 
@@ -99,6 +100,9 @@ LINUX_DEPLOYMENT_TRUSTED_PROXY_COUNT = 1
 > `can_manage_deployments` de Tactical RMM et l'accès au client concerné
 > (`_has_perm_on_client`). Hors Tactical RMM, seuls `is_staff`/`is_superuser`
 > sont autorisés.
+>
+> **Notifications** : envoyées en arrière-plan après commit
+> (`LINUX_DEPLOYMENT_NOTIFICATIONS_ASYNC = False` pour un envoi synchrone).
 >
 > **URLs de téléchargement** : elles sont désormais **obligatoirement signées**
 > (`?t=<expiration>&sig=<hmac>`). Utilisez `deployment_url` / `install_command`

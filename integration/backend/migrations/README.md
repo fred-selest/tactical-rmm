@@ -3,6 +3,7 @@
 ## 📦 Fichiers de migration
 
 - **`0002_add_signing_tokens.py`** : Ajoute les champs de sécurité (signing_token, one_time_token, etc.)
+- **`0003_add_indexes.py`** : Index sur `expires_at` et `(client_id, site_id)` (filtres, stats, nettoyage)
 
 ## 🚀 Comment appliquer les migrations
 
@@ -115,6 +116,7 @@ Résultat attendu :
 linux_deployments
  [X] 0001_initial
  [X] 0002_add_signing_tokens
+ [X] 0003_add_indexes
 ```
 
 ## 📖 Plus d'informations

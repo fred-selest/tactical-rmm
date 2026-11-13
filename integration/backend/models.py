@@ -9,10 +9,38 @@ import hmac
 import secrets
 import shlex
 import uuid
+from datetime import datetime
 
 from django.db import models
 from django.db.models import F
 from django.utils import timezone
+
+
+class LinuxDeploymentQuerySet(models.QuerySet):
+    """Filtres réutilisables (vues, exports, statistiques, commande de nettoyage)."""
+
+    def active(self) -> LinuxDeploymentQuerySet:
+        return self.filter(expires_at__gt=timezone.now())
+
+    def expired(self) -> LinuxDeploymentQuerySet:
+        return self.filter(expires_at__lte=timezone.now())
+
+    def expired_before(self, cutoff: datetime) -> LinuxDeploymentQuerySet:
+        return self.filter(expires_at__lt=cutoff)
+
+    def for_client(self, client_id: int | str) -> LinuxDeploymentQuerySet:
+        return self.filter(client_id=client_id)
+
+    def for_site(self, site_id: int | str) -> LinuxDeploymentQuerySet:
+        return self.filter(site_id=site_id)
+
+    def with_status(self, status: str | None) -> LinuxDeploymentQuerySet:
+        """``'active'`` / ``'expired'`` ; toute autre valeur ne filtre pas."""
+        if status == 'active':
+            return self.active()
+        if status == 'expired':
+            return self.expired()
+        return self
 
 
 class LinuxDeployment(models.Model):
@@ -99,9 +127,15 @@ class LinuxDeployment(models.Model):
     # Agents installés avec ce déploiement
     agents_installed = models.IntegerField(default=0)
 
+    objects = LinuxDeploymentQuerySet.as_manager()
+
     class Meta:
         db_table = 'linux_deployments'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['expires_at'], name='linux_deploy_expires_idx'),
+            models.Index(fields=['client_id', 'site_id'], name='linux_deploy_client_site_idx'),
+        ]
 
     def __str__(self) -> str:
         return f"Linux Deployment {self.uuid} - {self.client_name}/{self.site_name}"
@@ -182,20 +216,6 @@ sudo ./install-rmm-agent.sh"""
         """
         expected_signature = self.generate_signature(data_to_sign)
         return hmac.compare_digest(expected_signature.encode(), str(signature).encode())
-
-    def verify_signature(self, data_to_verify: str, provided_signature: str) -> bool:
-        """
-        Vérifie une signature HMAC
-
-        Args:
-            data_to_verify: Données originales
-            provided_signature: Signature fournie à vérifier
-
-        Returns:
-            True si la signature est valide, False sinon
-        """
-        expected_signature = self.generate_signature(data_to_verify)
-        return hmac.compare_digest(expected_signature, provided_signature)
 
     def signature_payload(self, timestamp: int | str) -> str:
         """Chaîne signée pour l'URL de téléchargement : ``<uuid>:<timestamp>``"""

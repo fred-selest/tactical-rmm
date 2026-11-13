@@ -1,25 +1,140 @@
 """
 Système de notifications pour les déploiements Linux.
-Supporte: Email, Slack, Discord, Microsoft Teams, Webhooks génériques.
+Supporte: Slack, Discord, Microsoft Teams, Webhooks génériques.
 
 Configuration via les variables d'environnement :
-    NOTIFICATION_EMAIL_ENABLED=true
-    NOTIFICATION_EMAIL_TO=admin@example.com
     NOTIFICATION_SLACK_WEBHOOK=https://hooks.slack.com/...
     NOTIFICATION_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
     NOTIFICATION_TEAMS_WEBHOOK=https://outlook.office.com/webhook/...
     NOTIFICATION_GENERIC_WEBHOOK=https://your-service.com/webhook
+
+Les envois sont faits en arrière-plan (pool de threads), après la validation
+de la transaction en cours : un webhook lent ou injoignable ne bloque jamais
+la requête HTTP du script d'installation. Mettre
+``LINUX_DEPLOYMENT_NOTIFICATIONS_ASYNC = False`` dans les settings pour un
+envoi synchrone (tests, débogage).
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
-from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+from django.conf import settings
+from django.db import transaction
+
 logger = logging.getLogger(__name__)
+
+WEBHOOK_TIMEOUT = 10  # secondes
+
+EVENT_TITLES = {
+    "installation_success": "Installation réussie",
+    "installation_failure": "Échec d'installation",
+    "token_expired": "Token expiré",
+}
+
+# Pool partagé et borné : au plus 2 envois simultanés, les autres attendent
+_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='linux-deploy-notify')
+
+
+def _title(event_type: str) -> str:
+    return f"Tactical RMM - {EVENT_TITLES.get(event_type, event_type)}"
+
+
+def _is_success(event_type: str) -> bool:
+    return event_type == "installation_success"
+
+
+class NotificationHandler:
+    """Classe de base : construit un payload JSON et le poste sur un webhook."""
+
+    name = "webhook"
+
+    def __init__(self, webhook_url: str) -> None:
+        self.webhook_url = webhook_url
+
+    def build_payload(self, event_type: str, message: str, data: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def send(self, event_type: str, message: str, data: dict[str, Any]) -> None:
+        body = json.dumps(self.build_payload(event_type, message, data)).encode('utf-8')
+        req = Request(self.webhook_url, data=body, headers={'Content-Type': 'application/json'})
+        # Toute exception (URLError, timeout, HTTPError...) est gérée par NotificationManager
+        with urlopen(req, timeout=WEBHOOK_TIMEOUT):
+            pass
+
+
+class SlackNotificationHandler(NotificationHandler):
+    """Handler pour les notifications Slack"""
+
+    name = "Slack"
+
+    def build_payload(self, event_type: str, message: str, data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "attachments": [{
+                "color": "#36a64f" if _is_success(event_type) else "#dc3545",
+                "title": _title(event_type),
+                "text": message,
+                "footer": "Tactical RMM Linux Deployment",
+            }]
+        }
+
+
+class DiscordNotificationHandler(NotificationHandler):
+    """Handler pour les notifications Discord"""
+
+    name = "Discord"
+
+    def build_payload(self, event_type: str, message: str, data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "embeds": [{
+                "title": _title(event_type),
+                "description": message,
+                "color": 0x36A64F if _is_success(event_type) else 0xDC3545,
+            }]
+        }
+
+
+class TeamsNotificationHandler(NotificationHandler):
+    """Handler pour les notifications Microsoft Teams"""
+
+    name = "Teams"
+
+    def build_payload(self, event_type: str, message: str, data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "@type": "MessageCard",
+            "themeColor": "00FF00" if _is_success(event_type) else "FF0000",
+            "summary": _title(event_type),
+            "sections": [{
+                "activityTitle": _title(event_type),
+                "text": message.replace('\n', '<br>'),
+            }]
+        }
+
+
+class GenericWebhookHandler(NotificationHandler):
+    """Handler pour les webhooks génériques"""
+
+    name = "générique"
+
+    def build_payload(self, event_type: str, message: str, data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "event": event_type,
+            "message": message,
+            "data": data,
+            "source": "tactical-rmm-linux-deployment",
+        }
+
+
+ENV_HANDLERS: dict[str, type[NotificationHandler]] = {
+    'NOTIFICATION_SLACK_WEBHOOK': SlackNotificationHandler,
+    'NOTIFICATION_DISCORD_WEBHOOK': DiscordNotificationHandler,
+    'NOTIFICATION_TEAMS_WEBHOOK': TeamsNotificationHandler,
+    'NOTIFICATION_GENERIC_WEBHOOK': GenericWebhookHandler,
+}
 
 
 class NotificationManager:
@@ -31,25 +146,10 @@ class NotificationManager:
 
     def _configure(self) -> None:
         """Configure les handlers depuis les variables d'environnement"""
-        if os.environ.get('NOTIFICATION_SLACK_WEBHOOK'):
-            self.handlers.append(
-                SlackNotificationHandler(os.environ['NOTIFICATION_SLACK_WEBHOOK'])
-            )
-
-        if os.environ.get('NOTIFICATION_DISCORD_WEBHOOK'):
-            self.handlers.append(
-                DiscordNotificationHandler(os.environ['NOTIFICATION_DISCORD_WEBHOOK'])
-            )
-
-        if os.environ.get('NOTIFICATION_TEAMS_WEBHOOK'):
-            self.handlers.append(
-                TeamsNotificationHandler(os.environ['NOTIFICATION_TEAMS_WEBHOOK'])
-            )
-
-        if os.environ.get('NOTIFICATION_GENERIC_WEBHOOK'):
-            self.handlers.append(
-                GenericWebhookHandler(os.environ['NOTIFICATION_GENERIC_WEBHOOK'])
-            )
+        for env_var, handler_cls in ENV_HANDLERS.items():
+            url = os.environ.get(env_var)
+            if url:
+                self.handlers.append(handler_cls(url))
 
     def notify_installation_success(
         self,
@@ -121,136 +221,29 @@ class NotificationManager:
         })
 
     def _send_all(self, event_type: str, message: str, data: dict[str, Any]) -> None:
-        """Envoie la notification à tous les handlers configurés"""
-        for handler in self.handlers:
+        """Envoie la notification à tous les handlers (en arrière-plan par défaut)"""
+        if not self.handlers:
+            return
+        if getattr(settings, 'LINUX_DEPLOYMENT_NOTIFICATIONS_ASYNC', True):
+            handlers = list(self.handlers)
+            transaction.on_commit(
+                lambda: _executor.submit(self._deliver, handlers, event_type, message, data)
+            )
+        else:
+            self._deliver(self.handlers, event_type, message, data)
+
+    @staticmethod
+    def _deliver(
+        handlers: list[NotificationHandler], event_type: str, message: str, data: dict[str, Any]
+    ) -> None:
+        for handler in handlers:
             try:
                 handler.send(event_type, message, data)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - une notification ne doit jamais faire échouer l'appelant
                 logger.error(
-                    "Erreur envoi notification %s via %s: %s",
-                    event_type, handler.__class__.__name__, e
+                    "Erreur envoi notification %s via webhook %s: %s",
+                    event_type, handler.name, e
                 )
-
-
-class NotificationHandler:
-    """Classe de base pour les handlers de notification"""
-
-    def send(self, event_type: str, message: str, data: dict[str, Any]) -> None:
-        raise NotImplementedError
-
-
-class SlackNotificationHandler(NotificationHandler):
-    """Handler pour les notifications Slack"""
-
-    def __init__(self, webhook_url: str) -> None:
-        self.webhook_url = webhook_url
-
-    def send(self, event_type: str, message: str, data: dict[str, Any]) -> None:
-        color = "#36a64f" if event_type == "installation_success" else "#dc3545"
-        title = {
-            "installation_success": "Installation réussie",
-            "installation_failure": "Échec d'installation",
-            "token_expired": "Token expiré",
-        }.get(event_type, event_type)
-
-        payload = {
-            "attachments": [{
-                "color": color,
-                "title": f"Tactical RMM - {title}",
-                "text": message,
-                "footer": "Tactical RMM Linux Deployment",
-            }]
-        }
-        self._post_json(payload)
-
-    def _post_json(self, payload: dict) -> None:
-        data = json.dumps(payload).encode('utf-8')
-        req = Request(self.webhook_url, data=data, headers={'Content-Type': 'application/json'})
-        try:
-            urlopen(req, timeout=10)
-        except URLError as e:
-            logger.error("Erreur Slack webhook: %s", e)
-
-
-class DiscordNotificationHandler(NotificationHandler):
-    """Handler pour les notifications Discord"""
-
-    def __init__(self, webhook_url: str) -> None:
-        self.webhook_url = webhook_url
-
-    def send(self, event_type: str, message: str, data: dict[str, Any]) -> None:
-        color = 0x36A64F if event_type == "installation_success" else 0xDC3545
-        title = {
-            "installation_success": "Installation réussie",
-            "installation_failure": "Échec d'installation",
-            "token_expired": "Token expiré",
-        }.get(event_type, event_type)
-
-        payload = {
-            "embeds": [{
-                "title": f"Tactical RMM - {title}",
-                "description": message,
-                "color": color,
-            }]
-        }
-        data_bytes = json.dumps(payload).encode('utf-8')
-        req = Request(self.webhook_url, data=data_bytes, headers={'Content-Type': 'application/json'})
-        try:
-            urlopen(req, timeout=10)
-        except URLError as e:
-            logger.error("Erreur Discord webhook: %s", e)
-
-
-class TeamsNotificationHandler(NotificationHandler):
-    """Handler pour les notifications Microsoft Teams"""
-
-    def __init__(self, webhook_url: str) -> None:
-        self.webhook_url = webhook_url
-
-    def send(self, event_type: str, message: str, data: dict[str, Any]) -> None:
-        color = "00FF00" if event_type == "installation_success" else "FF0000"
-        title = {
-            "installation_success": "Installation réussie",
-            "installation_failure": "Échec d'installation",
-            "token_expired": "Token expiré",
-        }.get(event_type, event_type)
-
-        payload = {
-            "@type": "MessageCard",
-            "themeColor": color,
-            "summary": f"Tactical RMM - {title}",
-            "sections": [{
-                "activityTitle": f"Tactical RMM - {title}",
-                "text": message.replace('\n', '<br>'),
-            }]
-        }
-        data_bytes = json.dumps(payload).encode('utf-8')
-        req = Request(self.webhook_url, data=data_bytes, headers={'Content-Type': 'application/json'})
-        try:
-            urlopen(req, timeout=10)
-        except URLError as e:
-            logger.error("Erreur Teams webhook: %s", e)
-
-
-class GenericWebhookHandler(NotificationHandler):
-    """Handler pour les webhooks génériques"""
-
-    def __init__(self, webhook_url: str) -> None:
-        self.webhook_url = webhook_url
-
-    def send(self, event_type: str, message: str, data: dict[str, Any]) -> None:
-        payload = {
-            "event": event_type,
-            "message": message,
-            "data": data,
-            "source": "tactical-rmm-linux-deployment",
-        }
-        data_bytes = json.dumps(payload).encode('utf-8')
-        req = Request(self.webhook_url, data=data_bytes, headers={'Content-Type': 'application/json'})
-        try:
-            urlopen(req, timeout=10)
-        except URLError as e:
-            logger.error("Erreur webhook générique: %s", e)
 
 
 # Instance globale

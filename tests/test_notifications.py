@@ -1,10 +1,12 @@
 """Tests des notifications (remplacent integration/backend/test_notifications.py)."""
 from __future__ import annotations
 
+import contextlib
 import json
 from urllib.error import URLError
 
 import pytest
+from django.test import override_settings
 
 from integration.backend import notifications
 from integration.backend.notifications import (
@@ -38,6 +40,7 @@ def sent(monkeypatch):
             'content_type': req.get_header('Content-type'),
             'payload': json.loads(req.data.decode('utf-8')),
         })
+        return contextlib.nullcontext()
 
     monkeypatch.setattr(notifications, 'urlopen', fake_urlopen)
     return calls
@@ -116,6 +119,26 @@ def test_handler_errors_never_propagate(monkeypatch, clean_env, error):
     NotificationManager().notify_installation_failure('u', 'c', 's', 'h', 'e')  # ne lève pas
 
 
+def test_response_is_closed(monkeypatch):
+    closed = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            closed.append(True)
+
+    monkeypatch.setattr(notifications, 'urlopen', lambda req, timeout=None: FakeResponse())
+    GenericWebhookHandler(WEBHOOK).send('installation_success', 'msg', {})
+    assert closed == [True]
+
+
+def test_unknown_event_keeps_its_name_as_title(sent):
+    SlackNotificationHandler(WEBHOOK).send('custom_event', 'msg', {})
+    assert sent[0]['payload']['attachments'][0]['title'] == 'Tactical RMM - custom_event'
+
+
 def test_failure_message_content(sent, clean_env, monkeypatch):
     monkeypatch.setenv('NOTIFICATION_GENERIC_WEBHOOK', WEBHOOK)
     NotificationManager().notify_installation_failure('uuid-1', 'ACME', 'Paris', 'srv01', '')
@@ -146,3 +169,59 @@ def test_rejected_callback_does_not_notify(anon_client, monkeypatch):
     dep = make_deployment()
     anon_client.post(callback_path(dep), {'hostname': 'h', 'status': 'success', 'one_time_token': 'bad'})
     assert calls == []
+
+
+# --- Envoi asynchrone ---------------------------------------------------------
+
+class RecordingExecutor:
+    def __init__(self):
+        self.jobs = []
+
+    def submit(self, fn, *args):
+        self.jobs.append((fn, args))
+
+
+@pytest.fixture
+def async_manager(monkeypatch, clean_env):
+    executor = RecordingExecutor()
+    monkeypatch.setattr(notifications, '_executor', executor)
+    monkeypatch.setenv('NOTIFICATION_GENERIC_WEBHOOK', WEBHOOK)
+    return NotificationManager(), executor
+
+
+@pytest.mark.django_db
+@override_settings(LINUX_DEPLOYMENT_NOTIFICATIONS_ASYNC=True)
+def test_async_send_waits_for_commit_and_runs_in_background(async_manager, sent, django_capture_on_commit_callbacks):
+    manager, executor = async_manager
+    with django_capture_on_commit_callbacks(execute=False) as callbacks:
+        manager.notify_installation_success('u', 'c', 's', 'h')
+    assert sent == [] and executor.jobs == []   # rien avant le commit
+    for cb in callbacks:
+        cb()
+    assert len(executor.jobs) == 1 and sent == []  # confié au pool, pas exécuté dans la requête
+    fn, args = executor.jobs[0]
+    fn(*args)
+    assert sent[0]['payload']['event'] == 'installation_success'
+
+
+@pytest.mark.django_db
+@override_settings(LINUX_DEPLOYMENT_NOTIFICATIONS_ASYNC=True)
+def test_async_send_is_dropped_on_rollback(async_manager, django_capture_on_commit_callbacks):
+    from django.db import transaction
+
+    manager, executor = async_manager
+    with django_capture_on_commit_callbacks(execute=True):
+        try:
+            with transaction.atomic():
+                manager.notify_installation_success('u', 'c', 's', 'h')
+                raise RuntimeError('rollback')
+        except RuntimeError:
+            pass
+    assert executor.jobs == []
+
+
+def test_no_handler_means_no_work(clean_env, monkeypatch):
+    executor = RecordingExecutor()
+    monkeypatch.setattr(notifications, '_executor', executor)
+    NotificationManager().notify_installation_success('u', 'c', 's', 'h')
+    assert executor.jobs == []
