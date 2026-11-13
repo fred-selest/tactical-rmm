@@ -6,15 +6,54 @@ Scripts pour surveiller et gérer des serveurs via Tactical RMM.
 
 ```
 scripts/
-├── plesk/           # Scripts Bash pour serveurs Plesk
-├── synology/        # Scripts Bash pour NAS Synology
-├── windows/         # Scripts PowerShell pour Windows Server
-├── activedirectory/ # Scripts PowerShell pour Active Directory
-├── veeam/           # Scripts PowerShell pour Veeam Backup
-├── eset/            # Scripts PowerShell pour ESET Endpoint
-├── omada/           # Scripts PowerShell pour TP-Link Omada
+├── system/             # Scripts Bash pour surveillance système (CPU, mémoire, disque, réseau)
+├── docker/             # Scripts Bash pour surveillance Docker
+├── database/           # Scripts Bash pour surveillance bases de données (MySQL, PostgreSQL)
+├── plesk/              # Scripts Bash pour serveurs Plesk
+├── synology/           # Scripts Bash pour NAS Synology
+├── windows/            # Scripts PowerShell pour Windows Server
+├── activedirectory/    # Scripts PowerShell pour Active Directory
+├── veeam/              # Scripts PowerShell pour Veeam Backup
+├── eset/               # Scripts PowerShell pour ESET Endpoint
+├── omada/              # Scripts PowerShell pour TP-Link Omada
 └── README.md
 ```
+
+## Scripts Système (Nouveau)
+
+Scripts Bash génériques pour la surveillance des performances système sur n'importe quelle machine Linux.
+
+| Script | Description |
+|--------|-------------|
+| `check-system.sh` | **Script complet** - Exécute toutes les vérifications système |
+| `check-cpu.sh` | Surveillance CPU, charge système, température |
+| `check-memory.sh` | Surveillance mémoire, swap, pression mémoire |
+| `check-disk.sh` | Surveillance espace disque, inodes, E/S disque |
+| `check-network.sh` | Surveillance connectivité, latence, connexions |
+
+Voir [system/README.md](system/README.md) pour la documentation complète.
+
+## Scripts Docker (Nouveau)
+
+Scripts Bash pour la surveillance des environnements Docker.
+
+| Script | Description |
+|--------|-------------|
+| `check-docker.sh` | État du daemon, conteneurs, espace disque, éléments orphelins |
+
+Voir [docker/README.md](docker/README.md) pour la documentation complète.
+
+## Scripts Bases de Données (Nouveau)
+
+Scripts Bash pour la surveillance des systèmes de bases de données.
+
+| Script | Description |
+|--------|-------------|
+| `check-database.sh` | **Script complet** - Détecte automatiquement MySQL/PostgreSQL |
+| `check-mysql.sh` | Surveillance MySQL/MariaDB complète |
+| `check-postgresql.sh` | Surveillance PostgreSQL complète |
+
+Voir [database/README.md](database/README.md) pour la documentation complète.
 
 ## Scripts TP-Link Omada
 
@@ -111,16 +150,40 @@ Voir [activedirectory/README.md](activedirectory/README.md) pour la documentatio
 
 ### Méthode recommandée : Scripts autonomes
 
-Utilisez les scripts `*_surveillance_complete.sh` qui sont autonomes et peuvent être copiés directement dans **Script Manager**.
+Utilisez les scripts `*_surveillance_complete.sh` pour Plesk/Synology, ou les scripts spécifiques pour les autres catégories.
 
 1. Dans Tactical RMM → **Settings** → **Script Manager** → **New**
-2. **Name** : `Synology - Surveillance complète` ou `Plesk - Surveillance complète`
+2. **Name** : Choisissez un nom approprié (ex: `Système - Surveillance CPU`)
 3. **Shell** : `Shell`
-4. **Timeout** : `120`
-5. Copiez le contenu du script autonome
+4. **Timeout** : `120` (ajustez selon le script)
+5. Copiez le contenu du script
 6. **Save**
 
 ### Téléchargement sur le serveur
+
+#### Sur un serveur Linux standard
+
+```bash
+mkdir -p /opt/tacticalrmm/scripts
+cd /opt/tacticalrmm/scripts
+
+# Scripts système
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/system/check-cpu.sh
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/system/check-memory.sh
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/system/check-disk.sh
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/system/check-network.sh
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/system/check-system.sh
+
+# Scripts Docker
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/docker/check-docker.sh
+
+# Scripts bases de données
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/database/check-mysql.sh
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/database/check-postgresql.sh
+wget https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/scripts/database/check-database.sh
+
+chmod +x *.sh
+```
 
 #### Sur un serveur Plesk
 
@@ -159,6 +222,42 @@ chmod +x *.sh
 - `1` : Alerte détectée (vérifiez la sortie)
 
 ## Personnalisation des seuils
+
+### Système
+
+```bash
+# check-cpu.sh
+SEUIL_CPU=80          # Alerte si utilisation CPU > X%
+DUREE_ALERTE=300      # Alerte critique si utilisation élevée pendant X secondes
+
+# check-memory.sh  
+SEUIL_MEMOIRE=85      # Alerte si utilisation mémoire > X%
+SEUIL_SWAP=50         # Alerte si utilisation swap > X%
+
+# check-disk.sh
+SEUIL_ESPACE=85       # Alerte si utilisation espace disque > X%
+SEUIL_INODES=90       # Alerte si utilisation inodes > X%
+
+# check-network.sh
+SEUIL_PING=100        # Alerte si latence > X ms
+```
+
+### Docker
+
+```bash
+# check-docker.sh
+SEUIL_CONTENEURS_STOPPED=0  # Alerte si > X conteneurs arrêtés
+SEUIL_ESPACE_DOCKER=85      # Alerte si utilisation espace Docker > X%
+```
+
+### Bases de Données
+
+```bash
+# check-mysql.sh / check-postgresql.sh
+SEUIL_CONNEXIONS=80   # Alerte si utilisation connexions > X%
+SEUIL_ESPACE=85       # Alerte si utilisation espace disque > X%
+SEUIL_SLOW_QUERIES=10 # Alerte si > X requêtes lentes par minute (MySQL)
+```
 
 ### Plesk
 

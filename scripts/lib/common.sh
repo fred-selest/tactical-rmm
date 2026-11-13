@@ -28,22 +28,88 @@ load_config() {
     fi
 }
 
+# --- Journalisation : repertoire ---
+# LOG_FILE pointait vers /var/log/tacticalrmm/<script>.log alors que le
+# repertoire n'est cree nulle part : toute ecriture de log echouait, et la
+# redirection fuyait sur stderr avant meme d'atteindre le fichier.
+_ensure_log_dir() {
+    local dir
+    dir="$(dirname "$LOG_FILE")"
+    [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 1
+    return 0
+}
+
+# --- Dépendances ---
+# Aucun script ne vérifiait ses dépendances, alors que bc/jq/sensors/
+# smartctl/timeout sont utilisés sans être garantis sur une image minimale.
+# AGENTS.md exige : « les scripts doivent détecter et installer
+# automatiquement les dépendances manquantes ».
+check_dependencies() {
+    local missing=() cmd pkg
+    local -A PKG=( [bc]="bc" [jq]="jq" [sensors]="lm-sensors" [smartctl]="smartmontools" [column]="bsdmainutils" )
+
+    for cmd in "$@"; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+
+    [ ${#missing[@]} -eq 0 ] && return 0
+
+    for cmd in "${missing[@]}"; do
+        log_warn "dépendance manquante : $cmd"
+    done
+
+    # Tentative d'installation non interactive, best-effort.
+    if [ "${NO_AUTO_INSTALL:-0}" = "1" ]; then
+        return 1
+    fi
+
+    local pkgs=()
+    for cmd in "${missing[@]}"; do
+        [ -n "${PKG[$cmd]:-}" ] && pkgs+=("${PKG[$cmd]}")
+    done
+    [ ${#pkgs[@]} -eq 0 ] && return 1
+
+    local mgr=""
+    for mgr in apt-get dnf yum apk opkg; do
+        command -v "$mgr" >/dev/null 2>&1 && break
+        mgr=""
+    done
+    [ -z "$mgr" ] && { log_error "aucun gestionnaire de paquets pour installer : ${pkgs[*]}"; return 1; }
+
+    log_info "installation de : ${pkgs[*]} (via $mgr)"
+    case "$mgr" in
+        apt-get) DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${pkgs[@]}" >/dev/null 2>&1 ;;
+        dnf)     dnf install -y "${pkgs[@]}" >/dev/null 2>&1 ;;
+        yum)     yum install -y "${pkgs[@]}" >/dev/null 2>&1 ;;
+        apk)     apk add --no-cache "${pkgs[@]}" >/dev/null 2>&1 ;;
+        opkg)    opkg install "${pkgs[@]}" >/dev/null 2>&1 ;;
+    esac
+
+    for cmd in "${missing[@]}"; do
+        command -v "$cmd" >/dev/null 2>&1 || { log_error "toujours absent après installation : $cmd"; return 1; }
+    done
+    return 0
+}
+
 # --- Logging ---
 log_info() {
     local message="$1"
     echo -e "${GREEN}[INFO]${NC} $message"
+    _ensure_log_dir || true
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $message" >> "$LOG_FILE" 2>/dev/null || true
 }
 
 log_warn() {
     local message="$1"
     echo -e "${YELLOW}[WARN]${NC} $message"
+    _ensure_log_dir || true
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $message" >> "$LOG_FILE" 2>/dev/null || true
 }
 
 log_error() {
     local message="$1"
     echo -e "${RED}[ERROR]${NC} $message" >&2
+    _ensure_log_dir || true
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $message" >> "$LOG_FILE" 2>/dev/null || true
 }
 
@@ -51,7 +117,8 @@ log_debug() {
     local message="$1"
     if [ "${LOG_LEVEL:-INFO}" = "DEBUG" ]; then
         echo -e "${BLUE}[DEBUG]${NC} $message"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEBUG] $message" >> "$LOG_FILE" 2>/dev/null || true
+        _ensure_log_dir || true
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEBUG] $message" >> "$LOG_FILE" 2>/dev/null || true
     fi
 }
 

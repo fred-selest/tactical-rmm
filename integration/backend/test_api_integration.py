@@ -12,10 +12,8 @@ Usage:
 """
 from __future__ import annotations
 
-import json
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
 
 
 class TestDeploymentAPIIntegration(unittest.TestCase):
@@ -122,8 +120,8 @@ chmod +x /tmp/install.sh
 
     def test_hmac_signature_generation(self) -> None:
         """Test génération et validation de signature HMAC"""
-        import hmac
         import hashlib
+        import hmac
 
         secret = "test_secret_key_for_hmac"
         data = "test_uuid:1234567890"

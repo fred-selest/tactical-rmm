@@ -6,9 +6,10 @@ Usage:
     python test_signing_tokens.py
 """
 
-import unittest
 import sys
+import unittest
 from datetime import timedelta
+
 from django.utils import timezone
 
 
@@ -75,7 +76,7 @@ class TestSigningTokens(unittest.TestCase):
 
         is_valid = self.deployment.validate_signature(data, signature)
         self.assertTrue(is_valid)
-        print(f"✅ Signature valide vérifiée avec succès")
+        print("✅ Signature valide vérifiée avec succès")
 
     def test_validate_signature_invalid(self):
         """Test validation d'une signature invalide"""
@@ -84,7 +85,7 @@ class TestSigningTokens(unittest.TestCase):
 
         is_valid = self.deployment.validate_signature(data, wrong_signature)
         self.assertFalse(is_valid)
-        print(f"✅ Signature invalide détectée correctement")
+        print("✅ Signature invalide détectée correctement")
 
     def test_get_signed_url(self):
         """Test génération d'URL signée"""
@@ -99,21 +100,21 @@ class TestSigningTokens(unittest.TestCase):
         """Test token frais (non utilisé, non expiré)"""
         is_valid = self.deployment.is_token_valid()
         self.assertTrue(is_valid)
-        print(f"✅ Token frais validé comme valide")
+        print("✅ Token frais validé comme valide")
 
     def test_is_token_valid_used(self):
         """Test token déjà utilisé"""
         self.deployment.token_used = True
         is_valid = self.deployment.is_token_valid()
         self.assertFalse(is_valid)
-        print(f"✅ Token utilisé détecté comme invalide")
+        print("✅ Token utilisé détecté comme invalide")
 
     def test_is_token_valid_expired(self):
         """Test token expiré"""
         self.deployment.expires_at = timezone.now() - timedelta(days=1)
         is_valid = self.deployment.is_token_valid()
         self.assertFalse(is_valid)
-        print(f"✅ Token expiré détecté comme invalide")
+        print("✅ Token expiré détecté comme invalide")
 
     def test_use_one_time_token_success(self):
         """Test utilisation du one-time token (succès)"""
@@ -127,7 +128,7 @@ class TestSigningTokens(unittest.TestCase):
 
         self.assertTrue(self.deployment.token_used)
         self.assertIsNotNone(self.deployment.token_used_at)
-        print(f"✅ One-time token marqué comme utilisé")
+        print("✅ One-time token marqué comme utilisé")
 
     def test_use_one_time_token_already_used(self):
         """Test utilisation d'un token déjà utilisé"""
@@ -138,7 +139,7 @@ class TestSigningTokens(unittest.TestCase):
             self.fail("Devrait lever ValueError")
         except ValueError as e:
             self.assertIn("déjà été utilisé", str(e))
-            print(f"✅ Exception levée pour token déjà utilisé")
+            print("✅ Exception levée pour token déjà utilisé")
 
     def test_tokens_uniqueness(self):
         """Test que les tokens générés sont uniques"""
@@ -159,14 +160,14 @@ class TestSigningTokens(unittest.TestCase):
         self.assertNotEqual(tokens1['signing'], tokens2['signing'])
         self.assertNotEqual(tokens1['onetime'], tokens2['onetime'])
         self.assertNotEqual(tokens1['secret'], tokens2['secret'])
-        print(f"✅ Tous les tokens sont uniques")
+        print("✅ Tous les tokens sont uniques")
 
 
 def run_tests():
     """Exécute tous les tests"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("🧪 Tests des Signing Tokens pour LinuxDeployment")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     # Créer une suite de tests
     suite = unittest.TestLoader().loadTestsFromTestCase(TestSigningTokens)
@@ -175,14 +176,14 @@ def run_tests():
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     if result.wasSuccessful():
         print("✅ TOUS LES TESTS SONT PASSÉS !")
     else:
         print("❌ CERTAINS TESTS ONT ÉCHOUÉ")
         print(f"   Échecs: {len(result.failures)}")
         print(f"   Erreurs: {len(result.errors)}")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     return result.wasSuccessful()
 
