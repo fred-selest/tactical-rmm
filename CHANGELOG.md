@@ -2,6 +2,29 @@
 
 Toutes les modifications notables de ce projet seront documentées dans ce fichier.
 
+## [Non publié]
+
+### 🔒 Sécurité
+
+- **Injection de commandes** : toutes les valeurs du script d'installation généré sont échappées (`shlex.quote`) ; les noms client/site contenant des caractères de contrôle sont refusés.
+- **Validation** : la création de déploiement passe par `LinuxDeploymentCreateSerializer` (HTTPS obligatoire, `expires_days` 1–365, choix contrôlés).
+- **Signature HMAC obligatoire** sur `/clients/<uuid>/deploy/linux/` ; `get_signed_url()` produit désormais le format vérifié par la vue (`t` = expiration, `sig` = HMAC de `<uuid>:<t>`).
+- **One-time token obligatoire** sur le callback d'installation, comparé en temps constant ; statut limité à `success`/`failed`.
+- **Secrets** : `auth_key` n'est plus renvoyé par l'API.
+- **Contrôle d'accès** : permission `can_manage_deployments` + filtrage par client sur liste, détail, suppression, stats et exports.
+- **X-Forwarded-For** ignoré par défaut (`LINUX_DEPLOYMENT_TRUSTED_PROXY_COUNT`), y compris pour le throttling.
+- **Concurrence** : compteurs et consommation du one-time token atomiques (`F()` / `update()` conditionnel).
+- Script généré : `set -euo pipefail`, répertoire `mktemp -d`, callback même en cas d'échec.
+
+### ⚠️ Changements incompatibles
+
+- Les anciennes URLs de déploiement non signées ne fonctionnent plus : régénérez-les depuis le dashboard.
+- Le champ `auth_key` disparaît des réponses de l'API.
+
+### 🧪 Tests
+
+- Nouveau harnais Django (`tests/settings.py`) et 33 tests de non-régression exécutant le vrai code (`pytest`).
+
 ## [3.0.0] - 2026-01-21
 
 ### 🎉 Nouvelle Fonctionnalité Majeure : Intégration Dashboard

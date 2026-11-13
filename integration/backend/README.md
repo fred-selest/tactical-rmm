@@ -11,6 +11,7 @@ backend/
 ├── serializers.py     # Serializers REST Framework
 ├── urls.py            # Configuration des URLs
 ├── admin.py           # Interface d'administration Django
+├── security.py        # IP cliente fiable + permissions par client
 └── README.md          # Ce fichier
 ```
 
@@ -83,7 +84,25 @@ INSTALLED_APPS = [
     # ... apps existantes ...
     'tacticalrmm.linux_deployments',
 ]
+
+# --- Sécurité des déploiements Linux ---
+# URL publique de l'API (évite de dépendre de l'en-tête Host)
+LINUX_DEPLOYMENT_API_URL = "https://api.votredomaine.com"
+# URL Mesh utilisée si le frontend n'en fournit pas
+LINUX_DEPLOYMENT_MESH_URL = "https://mesh.votredomaine.com/meshagents?id=..."
+# Nombre de reverse proxies de confiance devant Django (nginx = 1).
+# 0 = X-Forwarded-For ignoré (REMOTE_ADDR uniquement).
+LINUX_DEPLOYMENT_TRUSTED_PROXY_COUNT = 1
 ```
+
+> **Permissions** : les endpoints de gestion exigent le droit de rôle
+> `can_manage_deployments` de Tactical RMM et l'accès au client concerné
+> (`_has_perm_on_client`). Hors Tactical RMM, seuls `is_staff`/`is_superuser`
+> sont autorisés.
+>
+> **URLs de téléchargement** : elles sont désormais **obligatoirement signées**
+> (`?t=<expiration>&sig=<hmac>`). Utilisez `deployment_url` / `install_command`
+> renvoyés par l'API ; une URL sans signature renvoie `403`.
 
 ### 7. Migrations de base de données
 

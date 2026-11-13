@@ -4,10 +4,11 @@ Serializers Django REST Framework pour l'intégration de déploiement Linux
 """
 from __future__ import annotations
 
-from typing import Any
+import re
 
 from rest_framework import serializers
-from .models import LinuxDeployment, DeploymentLog
+
+from .models import DeploymentLog, LinuxDeployment
 
 
 class LinuxDeploymentSerializer(serializers.ModelSerializer):
@@ -31,7 +32,6 @@ class LinuxDeploymentSerializer(serializers.ModelSerializer):
             'arch',
             'api_url',
             'mesh_url',
-            'auth_key',
             'enable_ping',
             'enable_rdp',
             'install_mesh',
@@ -55,16 +55,16 @@ class LinuxDeploymentSerializer(serializers.ModelSerializer):
             'agents_installed',
         ]
 
+    # Note : auth_key, signing_token, one_time_token et signature_secret ne sont
+    # volontairement jamais exposés par l'API.
+
     def get_install_command(self, obj: LinuxDeployment) -> str:
-        """Retourne la commande d'installation complète"""
+        """Retourne la commande d'installation complète (URL signée)"""
         return obj.get_install_command()
 
     def get_deployment_url(self, obj: LinuxDeployment) -> str:
-        """Retourne l'URL de déploiement complète"""
-        request = self.context.get('request')
-        if request:
-            return request.build_absolute_uri(f'/clients/{obj.uuid}/deploy/linux/')
-        return f"/clients/{obj.uuid}/deploy/linux/"
+        """Retourne l'URL de déploiement signée"""
+        return obj.get_signed_url()
 
     def get_script_download_url(self, obj: LinuxDeployment) -> str:
         """Retourne l'URL de téléchargement du script"""
@@ -92,6 +92,25 @@ class DeploymentLogSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'timestamp']
 
 
+# Caractères de contrôle (retours à la ligne, tabulations, ESC, DEL...) interdits
+_CONTROL_CHARS = re.compile(r'[\x00-\x1f\x7f]')
+
+
+def _validate_display_name(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise serializers.ValidationError("Ce champ ne peut pas être vide.")
+    if _CONTROL_CHARS.search(value):
+        raise serializers.ValidationError("Ce champ contient des caractères de contrôle interdits.")
+    return value
+
+
+def _validate_https_url(value: str, label: str) -> str:
+    if value and (not value.startswith('https://') or _CONTROL_CHARS.search(value) or ' ' in value):
+        raise serializers.ValidationError(f"{label} doit être une URL https:// valide.")
+    return value
+
+
 class LinuxDeploymentCreateSerializer(serializers.Serializer):
     """
     Serializer pour la création d'un déploiement Linux
@@ -114,7 +133,14 @@ class LinuxDeploymentCreateSerializer(serializers.Serializer):
     enable_rdp = serializers.BooleanField(default=False)
     install_mesh = serializers.BooleanField(default=True)
     custom_script_url = serializers.URLField(required=False, allow_blank=True)
+    # Si absent, la vue utilise settings.LINUX_DEPLOYMENT_MESH_URL
     mesh_url = serializers.URLField(required=False)
+
+    def validate_client_name(self, value: str) -> str:
+        return _validate_display_name(value)
+
+    def validate_site_name(self, value: str) -> str:
+        return _validate_display_name(value)
 
     def validate_client_id(self, value: int) -> int:
         """Vérifie que l'identifiant du client est strictement positif"""
@@ -134,19 +160,11 @@ class LinuxDeploymentCreateSerializer(serializers.Serializer):
 
     def validate_custom_script_url(self, value: str) -> str:
         """Vérifie que l'URL du script personnalisé utilise HTTPS si elle est fournie"""
-        if value and not value.startswith('https://'):
-            raise serializers.ValidationError(
-                "L'URL du script personnalisé doit commencer par https://."
-            )
-        return value
+        return _validate_https_url(value, "L'URL du script personnalisé")
 
     def validate_mesh_url(self, value: str) -> str:
         """Vérifie que l'URL du Mesh Agent utilise HTTPS si elle est fournie"""
-        if value and not value.startswith('https://'):
-            raise serializers.ValidationError(
-                "L'URL du Mesh Agent doit commencer par https://."
-            )
-        return value
+        return _validate_https_url(value, "L'URL du Mesh Agent")
 
     def validate_expires_days(self, value: int) -> int:
         """Vérifie que la durée d'expiration est entre 1 et 365 jours"""

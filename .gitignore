@@ -21,6 +21,7 @@ __pycache__/
 *.so
 .Python
 env/
+.venv/
 venv/
 ENV/
 build/
@@ -56,3 +57,9 @@ rmmagent-synology/rmmagent-synology
 # Sauvegardes
 *.backup
 *.bak
+
+# Outils locaux
+.claude/
+.cursor/
+.pytest_cache/
+.ruff_cache/
