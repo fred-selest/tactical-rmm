@@ -22,8 +22,7 @@ integration/
 │   ├── migrations/
 │   │   ├── 0001_initial.py
 │   │   └── 0002_add_signing_tokens.py
-│   └── tests: test_signing_tokens.py, test_api_integration.py,
-│              test_export.py, test_notifications.py
+│   └── (tests : voir tests/ à la racine du dépôt, lancés avec `pytest`)
 │
 └── frontend/
     ├── LinuxDeploymentManager.vue   # Modal creation deploiement
