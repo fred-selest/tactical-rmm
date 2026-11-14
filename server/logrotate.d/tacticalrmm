@@ -1,0 +1,30 @@
+# Journaux applicatifs Tactical RMM et workers celery : aucune rotation
+# n'existait (trmm_debug.log = 2,5 Go depuis aout 2025).
+# copytruncate : les handlers Python (uwsgi, celery, daphne) et nginx gardent
+# leur descripteur ouvert, sans signal de reouverture.
+/rmm/api/tacticalrmm/tacticalrmm/private/log/trmm_debug.log
+/rmm/api/tacticalrmm/tacticalrmm/private/log/django_debug.log
+/var/log/celery/*.log {
+    weekly
+    rotate 8
+    maxsize 200M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su tactical tactical
+}
+
+# Ecrits par nginx (www-data) : rotation en root.
+/rmm/api/tacticalrmm/tacticalrmm/private/log/access.log
+/rmm/api/tacticalrmm/tacticalrmm/private/log/error.log {
+    weekly
+    rotate 8
+    maxsize 200M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
