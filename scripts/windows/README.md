@@ -21,6 +21,7 @@ Voir le répertoire [install/](install/) pour tous les scripts d'installation.
 | Script | Description |
 |--------|-------------|
 | `windows_surveillance_complete.ps1` | Surveillance complète du serveur |
+| `hyperv/health-check-hyperv.ps1` | Bilan de santé d'un hôte Hyper-V (tâche quotidienne) |
 
 ## Fonctionnalités de surveillance
 

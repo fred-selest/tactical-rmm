@@ -10,6 +10,7 @@ Scripts déployés sur le serveur RMM lui-même (pas sur les agents). La version
 | `postgresql-watchdog.sh` | `/usr/local/sbin/postgresql-watchdog.sh` | 755 root |
 | `cron.d/postgresql-watchdog` | `/etc/cron.d/postgresql-watchdog` | 644 root |
 | `logrotate.d/postgresql-watchdog` | `/etc/logrotate.d/postgresql-watchdog` | 644 root |
+| `logrotate.d/tacticalrmm` | `/etc/logrotate.d/tacticalrmm` | 644 root |
 
 ## backup-rmm.sh : sauvegarde quotidienne vers kDrive
 
@@ -46,3 +47,13 @@ MeshCentral plante quand PostgreSQL tombe et ne repart pas seul. Lancé chaque m
 L'ancienne version (une ligne cron) journalisait chaque minute : 224 351 lignes, sans rotation, pour un seul incident réel.
 
 Les tests (`tests/test-scripts.sh`, section 8c) simulent la panne avec un faux `pg_isready` et un faux `systemctl`. Ils ne demandent ni root ni PostgreSQL.
+
+## logrotate.d/tacticalrmm : rotation des journaux du RMM
+
+Aucune rotation n'existait pour les journaux applicatifs : `trmm_debug.log` a atteint 2,5 Go entre août 2025 et novembre 2026. Le fichier en couvre maintenant deux familles :
+- `trmm_debug.log`, `django_debug.log` et `/var/log/celery/*.log` : ils sont écrits par `tactical`, d'où `su tactical tactical` ;
+- `access.log` et `error.log` : ils sont écrits par nginx (`www-data`), donc la rotation se fait en root. Avec `su tactical`, logrotate échoue en « Permission denied ».
+
+Ces journaux tournent chaque semaine, ou dès 200 Mo, et 8 versions compressées sont gardées. `copytruncate` évite tout signal de réouverture aux processus Python et à nginx, au prix de quelques lignes perdues pendant la copie.
+
+Si ce journal grossit vite, il faut chercher la cause : en novembre 2026, 698 tâches « planifiées » sans récurrence produisaient environ 570 erreurs `invalid task trigger type` toutes les 2 minutes.

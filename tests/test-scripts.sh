@@ -225,6 +225,33 @@ _out=$(BACKUP_RMM_CONF="$_c/absent" bash "$_c/b.sh" 2>&1); _rc=$?
 rm -rf "$_c"
 
 # -----------------------------------------------------------------------------
+head_ "8d. Rotation des journaux RMM et bilan Hyper-V"
+# Affecté : trmm_debug.log a atteint 2,5 Go sans rotation. Le bloc des
+# journaux nginx doit tourner en root (www-data), sinon "Permission denied".
+_lr=server/logrotate.d/tacticalrmm
+if command -v logrotate >/dev/null 2>&1; then
+    # Le compte tactical n'existe que sur le serveur : copie avec l'utilisateur courant.
+    _st=$(mktemp); sed "s/^\( *su \)tactical tactical/\1$(id -un) $(id -gn)/" "$_lr" > "$_st.conf"
+    logrotate -d -s "$_st" "$_st.conf" >/dev/null 2>"$_st.err"; rm -f "$_st.conf"
+    if grep -qiE '^error' "$_st.err"; then ko "logrotate : syntaxe invalide" "$(grep -iE '^error' "$_st.err" | head -2)"
+    else ok "logrotate : syntaxe valide (logrotate -d)"; fi; rm -f "$_st" "$_st.err"
+else warn "logrotate absent : syntaxe non vérifiée"; fi
+for f in trmm_debug.log django_debug.log access.log error.log /var/log/celery; do
+    grep -qF "$f" "$_lr" || ko "logrotate : $f non couvert"
+done && ok "logrotate : journaux applicatifs, nginx et celery couverts"
+_ng=$(awk '/access\.log/{f=1} f&&/\{/{b=1} b{print} b&&/\}/{exit}' "$_lr")
+if grep -q '^ *su ' <<<"$_ng"; then ko "logrotate : bloc nginx en 'su' (www-data -> Permission denied)"
+else ok "logrotate : bloc nginx tourne en root"; fi
+grep -q 'maxsize' "$_lr" && ok "logrotate : maxsize présent (pas d'attente hebdo à 2 Go)" || ko "logrotate : pas de maxsize"
+
+_hv=scripts/windows/hyperv/health-check-hyperv.ps1
+grep -qE "exit 1" "$_hv" && ok "hyperv : code retour 1 sur fail (alerte RMM)" || ko "hyperv : aucun exit 1, la tâche restera passing"
+if grep -qE "'(ADWS|NTDS)'" "$_hv"; then ko "hyperv : contrôle de services DC sur un hôte Hyper-V"
+else ok "hyperv : pas de services DC (ADWS/NTDS) contrôlés"; fi
+grep -qE "vmms" "$_hv" && grep -qE "Get-VM\b" "$_hv" && ok "hyperv : services Hyper-V et VM contrôlés" || ko "hyperv : vmms ou Get-VM absent"
+grep -q -- "-split ','" "$_hv" && ok "hyperv : -IgnoreVM découpé (compatible powershell -File)" || ko "hyperv : -IgnoreVM non découpé"
+
+# -----------------------------------------------------------------------------
 head_ "9. ShellCheck — pas de nouvel avertissement"
 # Affecté : diag-rmm.sh v4Mergé triggers were caught by bash -n but SC1073
 # flagged a [ -d x 2>/dev/null ] that works in bash and in dash. Faux positif.
