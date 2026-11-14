@@ -1,0 +1,4 @@
+# Backup Tactical RMM vers kDrive (API REST) - voir server/README.md
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+17 3 * * * root /usr/local/sbin/backup-rmm.sh >> /var/log/backup-rmm.log 2>&1

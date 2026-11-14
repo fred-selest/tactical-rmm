@@ -1,0 +1,17 @@
+# /etc/backup-rmm.conf - lu (source) par backup-rmm.sh, en root.
+# Droits obligatoires : root:root 600, sinon le script refuse de demarrer.
+#   install -m 600 -o root -g root backup-rmm.conf.example /etc/backup-rmm.conf
+#
+# Aucun secret ici : le PAT Infomaniak est dans /root/.rmm-kdrive-token et le
+# token du bot Telegram dans /root/.rmm-telegram-token (600 root tous les deux).
+
+# kDrive : identifiants visibles dans l'URL https://ksuite.infomaniak.com/kdrive/app/drive/<DRIVE_ID>/files/<DIR_ID>
+DRIVE_ID=
+ACCOUNT_ID=
+DIR_ID=
+
+# Discussion Telegram qui recoit les notifications (vide = pas de notification)
+TELEGRAM_CHAT_ID=
+
+# Retention des archives sur kDrive, en jours
+RETENTION_DAYS=30
