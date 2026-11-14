@@ -29,7 +29,7 @@ Ce système permet de :
 ```bash
 # Télécharger les fichiers
 cd /tmp
-git clone https://github.com/votre-user/tactical-rmm.git
+git clone https://github.com/fred-selest/tactical-rmm.git
 cd tactical-rmm/scripts/linux/auto-update/
 
 # Exécuter l'installation
@@ -112,10 +112,9 @@ NOTIFICATION_WEBHOOK="https://outlook.office.com/webhook/YOUR/WEBHOOK"
 
 #### Sauvegardes
 
-```bash
-# Activer les sauvegardes avant mise à jour
-BACKUP_ENABLED=true
-```
+Toujours actives, sans réglage : `rmmagent-linux.sh update` copie l'ancien
+binaire, vérifie que le service redémarre avec la nouvelle version, et
+restaure l'ancien sinon.
 
 ## Planification
 
@@ -215,8 +214,9 @@ sudo systemctl start tactical-agent-updater.timer
 2. **Vérification activation** : Lit `AUTO_UPDATE_ENABLED`
 3. **Fenêtre de mise à jour** : Vérifie si l'heure actuelle est dans la fenêtre
 4. **Récupération des versions** :
-   - Version installée : depuis `/etc/tacticalagent/.version` ou le binaire
-   - Dernière version : depuis GitHub API
+   - Version installée : `rmmagent-linux.sh check` lit le binaire réel du service (`<agent> -version`)
+   - Version visée : `TARGET_AGENT_REF`, sinon le tag épinglé dans `rmmagent-linux.sh`
+     (= `LATEST_AGENT_VER` du serveur RMM, jamais la dernière release GitHub)
 5. **Comparaison** : Si nouvelle version disponible → mise à jour
 6. **Sauvegarde** : Backup de la configuration et du binaire
 7. **Mise à jour** : Exécute `rmmagent-linux.sh update`
@@ -407,8 +407,8 @@ sudo cat /var/log/tactical-rmm-updater.log
 # Tester manuellement
 sudo /usr/local/bin/tactical-agent-updater.sh
 
-# Vérifier la connectivité GitHub
-curl -I https://api.github.com/repos/amidaware/rmmagent/releases/latest
+# État sans rien modifier (0 = à jour, 10 = MAJ nécessaire)
+/usr/local/bin/tactical-agent-updater.sh --check
 ```
 
 ### Le verrou reste bloqué
@@ -469,5 +469,5 @@ Fonctionnalités futures :
 ## Support
 
 - Documentation Tactical RMM : https://docs.tacticalrmm.com/
-- Issues GitHub : https://github.com/votre-user/tactical-rmm/issues
+- Issues GitHub : https://github.com/fred-selest/tactical-rmm/issues
 - systemd timers : `man systemd.timer`

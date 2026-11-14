@@ -14,7 +14,9 @@ log() {
 get_network_interfaces() {
     # iproute2 peut manquer sur une image minimale : on dégrade au lieu d’échouer.
     if command -v ip >/dev/null 2>&1; then
-        ip -br addr show | grep -v LOOPBACK | awk '{print $1}'
+        # `ip -br` suffixe les veth/docker de leur pair (veth58f390a@if2) ;
+        # `ip addr show` refuse ce nom : "Device ... does not exist".
+        ip -br addr show | grep -v LOOPBACK | awk '{sub(/@.*/, "", $1); print $1}'
     else
         hostname -I 2>/dev/null | tr ' ' '\n' | sed 's/^/  /'
     fi

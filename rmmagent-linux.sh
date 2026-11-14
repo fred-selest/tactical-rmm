@@ -16,6 +16,10 @@
 # === VARIABLES GLOBALES ===
 VERSION="3.0"
 LOG_FILE="/var/log/tacticalrmm-install.log"
+# `check` et `status` tournent aussi sans root : on ne journalise alors pas sur disque.
+if ! { [ -w "$LOG_FILE" ] || [ -w "$(dirname "$LOG_FILE")" ]; }; then
+    LOG_FILE="/dev/null"
+fi
 GO_INSTALLED_BY_SCRIPT=false
 LANG="${TACTICAL_LANG:-fr_FR}"
 GO_VERSION="1.21.6"
@@ -26,9 +30,14 @@ GO_VERSION="1.21.6"
 # directly tied to the RMM's version". Compiler une branche mutable sur un
 # serveur de production expose aussi a executer du code non verifie.
 # On epingle sur un tag ; TACTICAL_AGENT_REF permet de surcharger.
-# v2.11.0 = LATEST_AGENT_VER de Tactical RMM 1.5.2 (api/tacticalrmm/tacticalrmm/settings.py).
+# v2.12.0 = LATEST_AGENT_VER de Tactical RMM 1.6.1 (settings.py, verifie sur
+# api.selest.info le 14/11/2026). A chaque montee de version du serveur, aligner
+# ce tag : un agent plus ancien reste en "agentupdate pending" indefiniment.
 AGENT_REPO="https://github.com/amidaware/rmmagent"
-AGENT_REF="${TACTICAL_AGENT_REF:-v2.11.0}"
+AGENT_REF="${TACTICAL_AGENT_REF:-v2.12.0}"
+# Binaire deja compile a installer tel quel (saute Go + compilation).
+# Obligatoire sur Synology : l'agent y est un build modifie (rmmagent-synology/).
+AGENT_BINARY="${TACTICAL_AGENT_BINARY:-}"
 
 # === COULEURS ===
 RED='\033[0;31m'
@@ -607,56 +616,152 @@ EOF
     log "Agent Tactical RMM installé dans $INSTALL_PATH"
 }
 
-# === MISE À JOUR AGENT (inchangé depuis version 2.0) ===
+# === DÉTECTION DE L'AGENT INSTALLÉ ===
+
+# Chemin reel du binaire de l'agent, liens symboliques resolus.
+# Ordre : TACTICAL_AGENT_PATH > ExecStart du service > chemins connus.
+# L'ancien code supposait /usr/local/bin/rmmagent : sur les installations
+# officielles (/usr/local/bin/tacticalagent), `update` ecrivait donc un
+# binaire que le service n'utilisait pas, et annoncait un succes.
+function resolve_agent_path() {
+    local p=""
+    if [ -n "${TACTICAL_AGENT_PATH:-}" ]; then
+        # Chemin impose : pas de repli silencieux sur un autre agent.
+        [ -e "$TACTICAL_AGENT_PATH" ] || return 1
+        readlink -f "$TACTICAL_AGENT_PATH"
+        return 0
+    elif command -v systemctl >/dev/null 2>&1; then
+        # `show -p` sans --value : le systemd de DSM ne connait pas --value.
+        p=$(systemctl show -p ExecStart tacticalagent 2>/dev/null \
+            | sed -n 's/.*path=\([^ ;]*\).*/\1/p' | head -1)
+    fi
+    if [ -z "$p" ] || [ ! -e "$p" ]; then
+        local c
+        for c in /usr/local/bin/tacticalagent /usr/local/bin/rmmagent \
+                 "$INSTALL_PATH/bin/rmmagent" "$INSTALL_PATH/rmmagent"; do
+            if [ -e "$c" ]; then p="$c"; break; fi
+        done
+    fi
+    [ -n "$p" ] && [ -e "$p" ] || return 1
+    readlink -f "$p"
+}
+
+# Version annoncee par un binaire d'agent ("Tactical RMM Agent: 2.12.0").
+function agent_version() {
+    "$1" -version 2>/dev/null | sed -n 's/^Tactical RMM Agent: *v\{0,1\}\([0-9][0-9.]*\).*/\1/p' | head -1
+}
+
+# Version visee : celle du tag AGENT_REF. Vide si AGENT_REF est une branche.
+function target_version() {
+    case "$AGENT_REF" in
+        v[0-9]*) echo "${AGENT_REF#v}" ;;
+        [0-9]*)  echo "$AGENT_REF" ;;
+    esac
+}
+
+# Vrai si $1 < $2 (comparaison de versions).
+function version_lt() {
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$1" ]
+}
+
+# `check` : etat machine-lisible, sans rien modifier.
+#   0 = a jour, 10 = mise a jour necessaire, 2 = indeterminable
+function check_agent() {
+    local path installed target
+    path=$(resolve_agent_path) || { echo "STATUS=agent_introuvable"; return 2; }
+    installed=$(agent_version "$path")
+    target=$(target_version)
+    echo "AGENT_PATH=$path"
+    echo "INSTALLED=${installed:-inconnue}"
+    echo "TARGET=${target:-inconnue}"
+    if [ -z "$installed" ] || [ -z "$target" ]; then
+        echo "STATUS=indeterminable"; return 2
+    fi
+    if version_lt "$installed" "$target"; then
+        echo "STATUS=update_needed"; return 10
+    fi
+    echo "STATUS=up_to_date"; return 0
+}
+
+# Binaire fourni par TACTICAL_AGENT_BINARY, a la place de la compilation.
+function use_prebuilt_binary() {
+    if [ ! -f "$AGENT_BINARY" ]; then
+        log "ERREUR: TACTICAL_AGENT_BINARY=$AGENT_BINARY introuvable"
+        exit 1
+    fi
+    cp "$AGENT_BINARY" "$TMPDIR/temp_rmmagent" && chmod 755 "$TMPDIR/temp_rmmagent" || {
+        log "ERREUR: copie de $AGENT_BINARY impossible"; exit 1; }
+    log "Binaire fourni: $AGENT_BINARY"
+}
+
+# === MISE À JOUR AGENT ===
+
+function restart_agent_service() {
+    systemctl restart tacticalagent 2>&1 | tee -a "$LOG_FILE"
+    sleep 3
+    systemctl is-active --quiet tacticalagent
+}
 
 function update_agent() {
     log "Mise à jour de l'agent..."
 
-    # Détecter le chemin de l'agent
-    local agent_path="/usr/local/bin/rmmagent"
-    if [ -f "$INSTALL_PATH/bin/rmmagent" ]; then
-        agent_path="$INSTALL_PATH/bin/rmmagent"
-    elif [ -f "$INSTALL_PATH/rmmagent" ]; then
-        agent_path="$INSTALL_PATH/rmmagent"
-    fi
-
-    # Arrêter le service
-    if systemctl is-active --quiet tacticalagent; then
-        systemctl stop tacticalagent
-        log "Service arrêté"
-    fi
-
-    # Sauvegarder l'ancien agent
-    if [ -f "$agent_path" ]; then
-        cp "$agent_path" "${agent_path}.backup"
-        log "Agent sauvegardé: ${agent_path}.backup"
-    fi
-
-    # Copier le nouvel agent
-    if cp "$TMPDIR/temp_rmmagent" "$agent_path" 2>&1 | tee -a "$LOG_FILE"; then
-        chmod +x "$agent_path"
-        log "Agent mis à jour avec succès"
-        rm "$TMPDIR/temp_rmmagent"
-        rm -f "${agent_path}.backup"
-    else
-        log "ERREUR: Échec de la mise à jour"
-        if [ -f "${agent_path}.backup" ]; then
-            log "Restauration de l'ancienne version..."
-            cp "${agent_path}.backup" "$agent_path"
-            log "Agent restauré"
-        fi
+    local agent_path new_version target old_version
+    if ! agent_path=$(resolve_agent_path); then
+        log "ERREUR: agent installé introuvable (service tacticalagent, /usr/local/bin/{tacticalagent,rmmagent})"
+        log "       surchargez avec TACTICAL_AGENT_PATH=/chemin/vers/agent"
         exit 1
     fi
+    old_version=$(agent_version "$agent_path")
+    log "Agent installé: $agent_path (version ${old_version:-inconnue})"
 
-    # Redémarrer le service
-    systemctl start tacticalagent 2>&1 | tee -a "$LOG_FILE"
-
-    if systemctl is-active --quiet tacticalagent; then
-        log "Service redémarré avec succès"
-    else
-        log "ATTENTION: Le service n'a pas démarré correctement"
-        systemctl status tacticalagent --no-pager | tee -a "$LOG_FILE"
+    # Le binaire doit annoncer la version visee AVANT de toucher a la prod.
+    new_version=$(agent_version "$TMPDIR/temp_rmmagent")
+    target=$(target_version)
+    if [ -z "$new_version" ]; then
+        log "ERREUR: le nouveau binaire ne s'exécute pas ou n'annonce aucune version"
+        exit 1
     fi
+    if [ -z "$AGENT_BINARY" ] && [ -n "$target" ] && [ "$new_version" != "$target" ]; then
+        log "ERREUR: binaire compilé en $new_version, attendu $target"
+        exit 1
+    fi
+    log "Nouveau binaire: version $new_version"
+
+    local backup="${agent_path}.backup"
+    cp -p "$agent_path" "$backup" || { log "ERREUR: sauvegarde $backup impossible"; exit 1; }
+    log "Agent sauvegardé: $backup"
+
+    # Copie dans le meme repertoire puis rename : remplacement atomique,
+    # meme si le binaire est en cours d'execution ("Text file busy").
+    local staged
+    staged=$(mktemp "$(dirname "$agent_path")/.rmmagent.XXXXXX") || {
+        log "ERREUR: écriture impossible dans $(dirname "$agent_path")"; exit 1; }
+    if ! { cp "$TMPDIR/temp_rmmagent" "$staged" && chmod 755 "$staged" && mv -f "$staged" "$agent_path"; }; then
+        rm -f "$staged"
+        log "ERREUR: Échec du remplacement du binaire, l'ancien est intact"
+        exit 1
+    fi
+    if command -v restorecon >/dev/null 2>&1; then
+        restorecon "$agent_path" 2>/dev/null || true
+    fi
+    rm -f "$TMPDIR/temp_rmmagent"
+
+    if restart_agent_service && [ "$(agent_version "$agent_path")" = "$new_version" ]; then
+        log "Agent mis à jour: ${old_version:-inconnue} -> $new_version, service actif"
+        rm -f "$backup"
+        return 0
+    fi
+
+    log "ERREUR: le service ne redémarre pas avec la nouvelle version, retour arrière..."
+    systemctl status tacticalagent --no-pager 2>&1 | tail -15 | tee -a "$LOG_FILE"
+    cp -p "$backup" "$agent_path"
+    if restart_agent_service; then
+        log "Ancienne version ${old_version:-inconnue} restaurée, service actif"
+        rm -f "$backup"
+    else
+        log "ERREUR CRITIQUE: service inactif même après restauration de $backup"
+    fi
+    exit 1
 }
 
 # === DÉSINSTALLATION (inchangé) ===
@@ -710,18 +815,14 @@ function status_agent() {
     echo "==========================================="
     echo ""
 
-    # Détecter le chemin de l'agent
-    local agent_path="/usr/local/bin/rmmagent"
-    if [ -f "$INSTALL_PATH/bin/rmmagent" ]; then
-        agent_path="$INSTALL_PATH/bin/rmmagent"
-    elif [ -f "$INSTALL_PATH/rmmagent" ]; then
-        agent_path="$INSTALL_PATH/rmmagent"
-    fi
+    local agent_path
+    agent_path=$(resolve_agent_path) || agent_path="/usr/local/bin/rmmagent"
 
     # Service systemd
     if systemctl is-active --quiet tacticalagent 2>/dev/null; then
         echo "✓ Service: ACTIF"
-        local uptime=$(systemctl show tacticalagent -p ActiveEnterTimestamp --value)
+        local uptime
+        uptime=$(systemctl show tacticalagent -p ActiveEnterTimestamp | cut -d= -f2-)
         echo "  Démarré: $uptime"
     else
         echo "✗ Service: INACTIF"
@@ -729,8 +830,9 @@ function status_agent() {
 
     # Binaire
     if [ -f "$agent_path" ]; then
-        local size=$(ls -lh "$agent_path" | awk '{print $5}')
-        echo "✓ Binaire: $agent_path ($size)"
+        local size
+        size=$(ls -lh "$agent_path" | awk '{print $5}')
+        echo "✓ Binaire: $agent_path ($size, version $(agent_version "$agent_path"))"
     else
         echo "✗ Binaire: NON TROUVÉ"
     fi
@@ -802,8 +904,15 @@ ACTIONS:
           123 456 "auth-key-xyz" "server"
 
   update
-    Mise à jour de l'agent (recompile et redémarre)
-    Aucun argument requis
+    Mise à jour de l'agent : compile le tag AGENT_REF, vérifie la version du
+    binaire, remplace l'agent du service, redémarre, revient en arrière en cas
+    d'échec. Aucun argument requis.
+    Synology : TACTICAL_AGENT_BINARY obligatoire (voir rmmagent-synology/).
+
+  check
+    Compare l'agent installé à la version visée, sans rien modifier.
+    Code retour : 0 = à jour, 10 = mise à jour nécessaire, 2 = indéterminable.
+    Ne nécessite pas root.
 
   uninstall
     Désinstallation complète de l'agent
@@ -830,8 +939,10 @@ EXEMPLES D'INSTALLATION DEPUIS LE DASHBOARD:
 
 VARIABLES D'ENVIRONNEMENT:
 
-  TACTICAL_LANG    Langue (fr_FR ou en_US)
-                   Défaut: fr_FR
+  TACTICAL_LANG          Langue (fr_FR ou en_US). Défaut: fr_FR
+  TACTICAL_AGENT_REF     Tag rmmagent à compiler. Défaut: $AGENT_REF
+  TACTICAL_AGENT_BINARY  Binaire déjà compilé à installer (pas de compilation)
+  TACTICAL_AGENT_PATH    Chemin de l'agent installé (sinon : ExecStart du service)
 
 SUPPORT:
   Documentation: github.com/amidaware/tacticalrmm
@@ -846,8 +957,11 @@ EOF
 # Piège pour le nettoyage en cas d'arrêt
 trap cleanup EXIT
 
-# Vérifier les droits root
-check_root
+# Vérifier les droits root (check/status/help sont en lecture seule)
+case "${1:-}" in
+    check|status|help|--help|-h|"") ;;
+    *) check_root ;;
+esac
 
 # Afficher la version
 log "=== Tactical RMM Installation Script v$VERSION ==="
@@ -861,7 +975,7 @@ fi
 ACTION=$1
 
 # Valider l'action
-if [[ "$ACTION" != "install" && "$ACTION" != "update" && "$ACTION" != "uninstall" && "$ACTION" != "status" ]]; then
+if [[ "$ACTION" != "install" && "$ACTION" != "update" && "$ACTION" != "uninstall" && "$ACTION" != "status" && "$ACTION" != "check" ]]; then
     log "ERREUR: Action invalide: $ACTION"
     echo "Utilisez '$0 help' pour voir l'aide"
     exit 1
@@ -940,9 +1054,20 @@ case $ACTION in
 
     update)
         msg update_start
-        check_dependencies
-        go_install
-        agent_compile
+        if [ "$OS_TYPE" = "synology" ] && [ -z "$AGENT_BINARY" ]; then
+            log "ERREUR: Synology détecté. La compilation standard supprimerait la"
+            log "        détection DSM/disques de l'agent modifié."
+            log "        Compilez avec rmmagent-synology/build.sh, puis :"
+            log "        TACTICAL_AGENT_BINARY=/chemin/rmmagent-synology $0 update"
+            exit 1
+        fi
+        if [ -n "$AGENT_BINARY" ]; then
+            use_prebuilt_binary
+        else
+            check_dependencies
+            go_install
+            agent_compile
+        fi
         update_agent
         msg update_complete
 
@@ -972,6 +1097,11 @@ case $ACTION in
 
     status)
         status_agent
+        ;;
+
+    check)
+        check_agent
+        exit $?
         ;;
 esac
 

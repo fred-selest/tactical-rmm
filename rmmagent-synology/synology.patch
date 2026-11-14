@@ -1,0 +1,174 @@
+--- a/agent/agent_unix.go
++++ b/agent/agent_unix.go
+@@ -467,6 +467,21 @@
+ 			ips = append(ips, ip)
+ 		}
+ 	}
++	// Synology fallback: use ip addr if gopsutil returns empty
++	if len(ips) == 0 && trmm.FileExists("/etc/synoinfo.conf") {
++		opts := a.NewCMDOpts()
++		opts.Command = "ip -4 addr show | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}'"
++		out := a.CmdV2(opts)
++		if out.Status.Exit == 0 {
++			lines := strings.Split(strings.TrimSpace(out.Stdout), "\n")
++			for _, line := range lines {
++				ip := strings.TrimSpace(line)
++				if ip != "" {
++					ips = append(ips, ip)
++				}
++			}
++		}
++	}
+ 	wmiInfo["local_ips"] = ips
+ 
+ 	// disks
+@@ -479,8 +494,69 @@
+ 			if disk.IsRemovable || contains(disk.Name, ignore) {
+ 				continue
+ 			}
+-			ret := fmt.Sprintf("%s %s %s %s %s %s", disk.Vendor, disk.Model, disk.StorageController, disk.DriveType, disk.Name, ByteCountSI(disk.SizeBytes))
++			vendor := disk.Vendor
++			model := disk.Model
++			serial := ""
++			storageController := disk.StorageController.String()
++			driveType := disk.DriveType.String()
++
++			// Synology-specific: use smartctl to get better disk info
++			if trmm.FileExists("/etc/synoinfo.conf") && (vendor == "unknown" || vendor == "Unknown" || vendor == "" || model == "unknown" || model == "Unknown" || model == "") {
++				diskPath := fmt.Sprintf("/dev/%s", disk.Name)
++				opts := a.NewCMDOpts()
++				opts.Command = fmt.Sprintf("smartctl -i %s", diskPath)
++				out := a.CmdV2(opts)
++				if out.Status.Exit == 0 {
++					lines := strings.Split(out.Stdout, "\n")
++					for _, line := range lines {
++						if strings.Contains(line, "Device Model:") || strings.Contains(line, "Product:") {
++							parts := strings.SplitN(line, ":", 2)
++							if len(parts) == 2 {
++								model = strings.TrimSpace(parts[1])
++							}
++						}
++						if strings.Contains(line, "Serial Number:") || strings.Contains(line, "Serial number:") {
++							parts := strings.SplitN(line, ":", 2)
++							if len(parts) == 2 {
++								serial = strings.TrimSpace(parts[1])
++							}
++						}
++						if strings.Contains(line, "Vendor:") {
++							parts := strings.SplitN(line, ":", 2)
++							if len(parts) == 2 {
++								vendor = strings.TrimSpace(parts[1])
++							}
++						}
++						// Detect HDD vs SSD
++						if strings.Contains(line, "Rotation Rate:") {
++							parts := strings.SplitN(line, ":", 2)
++							if len(parts) == 2 {
++								rate := strings.TrimSpace(parts[1])
++								if strings.Contains(rate, "Solid State") {
++									driveType = "SSD"
++								} else if strings.Contains(rate, "rpm") {
++									driveType = "HDD"
++								}
++							}
++						}
++						// Detect SATA
++						if strings.Contains(line, "SATA Version is:") {
++							storageController = "SATA"
++						}
++					}
++				}
++				// Detect SATA from disk name
++				if strings.HasPrefix(disk.Name, "sata") && (storageController == "Unknown" || storageController == "unknown") {
++					storageController = "SATA"
++				}
++			}
++
++			ret := fmt.Sprintf("%s %s %s %s %s %s", vendor, model, storageController, driveType, disk.Name, ByteCountSI(disk.SizeBytes))
++			if serial != "" {
++				ret = fmt.Sprintf("%s %s %s %s %s %s (S/N: %s)", vendor, model, storageController, driveType, disk.Name, ByteCountSI(disk.SizeBytes), serial)
++			}
+ 			ret = strings.TrimSpace(strings.ReplaceAll(ret, "unknown", ""))
++			ret = strings.TrimSpace(strings.ReplaceAll(ret, "Unknown", ""))
+ 			disks = append(disks, ret)
+ 		}
+ 	}
+@@ -510,6 +586,59 @@
+ 		}
+ 	}
+ 
++	// Synology-specific: get actual model and DSM version
++	if trmm.FileExists("/etc/synoinfo.conf") {
++		opts := a.NewCMDOpts()
++		opts.Command = "grep -hE 'upnpmodelname=|majorversion=|minorversion=|buildnumber=' /etc/synoinfo.conf /etc.defaults/VERSION 2>/dev/null"
++		out := a.CmdV2(opts)
++		if out.Status.Exit == 0 {
++			model := ""
++			major := ""
++			minor := ""
++			build := ""
++			for _, line := range strings.Split(out.Stdout, "\n") {
++				if strings.Contains(line, "upnpmodelname=") {
++					parts := strings.SplitN(line, "=", 2)
++					if len(parts) == 2 {
++						model = strings.Trim(parts[1], "\"")
++					}
++				}
++				if strings.Contains(line, "majorversion=") {
++					parts := strings.SplitN(line, "=", 2)
++					if len(parts) == 2 {
++						major = strings.Trim(parts[1], "\"")
++					}
++				}
++				if strings.Contains(line, "minorversion=") {
++					parts := strings.SplitN(line, "=", 2)
++					if len(parts) == 2 {
++						minor = strings.Trim(parts[1], "\"")
++					}
++				}
++				if strings.Contains(line, "buildnumber=") {
++					parts := strings.SplitN(line, "=", 2)
++					if len(parts) == 2 {
++						build = strings.Trim(parts[1], "\"")
++					}
++				}
++			}
++			if model != "" {
++				dsm := ""
++				if major != "" && minor != "" {
++					dsm = fmt.Sprintf("DSM %s.%s", major, minor)
++					if build != "" {
++						dsm = fmt.Sprintf("%s-%s", dsm, build)
++					}
++				}
++				if dsm != "" {
++					wmiInfo["make_model"] = fmt.Sprintf("Synology %s (%s)", model, dsm)
++				} else {
++					wmiInfo["make_model"] = fmt.Sprintf("Synology %s", model)
++				}
++			}
++		}
++	}
++
+ 	if runtime.GOOS == "darwin" {
+ 		opts := a.NewCMDOpts()
+ 		opts.Command = "sysctl hw.model"
+@@ -558,6 +687,18 @@
+ 		} else {
+ 			wmiInfo["serialnumber"] = baseboard.SerialNumber
+ 		}
++		// Synology fallback: use syno_serial if baseboard returns generic value
++		if trmm.FileExists("/etc/synoinfo.conf") {
++			serial := wmiInfo["serialnumber"].(string)
++			if serial == "n/a" || serial == "123456789" || serial == "Default string" || serial == "" {
++				opts := a.NewCMDOpts()
++				opts.Command = "cat /proc/sys/kernel/syno_serial"
++				out := a.CmdV2(opts)
++				if out.Status.Exit == 0 && strings.TrimSpace(out.Stdout) != "" {
++					wmiInfo["serialnumber"] = strings.TrimSpace(out.Stdout)
++				}
++			}
++		}
+ 	case "darwin":
+ 		opts := a.NewCMDOpts()
+ 		serialCmd := `ioreg -l | grep IOPlatformSerialNumber | grep -o '"IOPlatformSerialNumber" = "[^"]*"' | awk -F'"' '{print $4}'`

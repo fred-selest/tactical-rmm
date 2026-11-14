@@ -1,0 +1,3 @@
+# Watchdog PostgreSQL + cascade restart MeshCentral (silencieux si OK).
+# Script : /usr/local/sbin/postgresql-watchdog.sh - rotation : /etc/logrotate.d/postgresql-watchdog
+* * * * * root /usr/local/sbin/postgresql-watchdog.sh

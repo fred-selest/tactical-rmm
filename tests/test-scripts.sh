@@ -136,6 +136,95 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+head_ "8b. Mise à jour agent : rmmagent-linux.sh check et wrappers"
+# Affecté : tactical-agent-updater.sh lisait la version via un chemin
+# impossible (/etc/tacticalagent/.version) et `rmmagent -v` : version
+# « inconnue », recompilation à chaque passage. update-tactical-agent.sh
+# cherchait un tactical.sh qui n'existe nulle part. Agents factices : le test
+# ne dépend ni de root ni d'un agent installé.
+_stub=$(mktemp -d)
+_target=$(sed -n 's/^AGENT_REF="${TACTICAL_AGENT_REF:-v\([0-9.]*\)}"$/\1/p' rmmagent-linux.sh)
+mkstub() {
+    printf '#!/bin/sh\n[ "$1" = -version ] && echo "Tactical RMM Agent: %s"\nexit 0\n' "$1" > "$_stub/a-$1"
+    chmod +x "$_stub/a-$1"
+}
+expect_rc() {   # libellé, code attendu, commande...
+    local label=$1 want=$2; shift 2
+    "$@" >/dev/null 2>&1; local got=$?
+    if [ "$got" -eq "$want" ]; then ok "$label (code $got)"; else ko "$label" "code $got, attendu $want"; fi
+}
+if [ -z "$_target" ]; then
+    ko "AGENT_REF épinglé introuvable dans rmmagent-linux.sh"
+else
+    mkstub 1.0.0; mkstub "$_target"; mkstub 99.0.0
+    printf '#!/bin/sh\necho garbage\n' > "$_stub/a-bad"; chmod +x "$_stub/a-bad"
+    expect_rc "check : agent ancien -> MAJ"        10 env TACTICAL_AGENT_PATH="$_stub/a-1.0.0" bash rmmagent-linux.sh check
+    expect_rc "check : agent = $_target -> à jour"  0 env TACTICAL_AGENT_PATH="$_stub/a-$_target" bash rmmagent-linux.sh check
+    expect_rc "check : agent plus récent -> à jour" 0 env TACTICAL_AGENT_PATH="$_stub/a-99.0.0" bash rmmagent-linux.sh check
+    expect_rc "check : version illisible"            2 env TACTICAL_AGENT_PATH="$_stub/a-bad" bash rmmagent-linux.sh check
+    expect_rc "check : chemin imposé absent"         2 env TACTICAL_AGENT_PATH="$_stub/absent" bash rmmagent-linux.sh check
+    _u="env TACTICAL_UPDATER_CONF=$_stub/none TACTICAL_UPDATER_LOG=$_stub/u.log TACTICAL_UPDATER_LOCK=$_stub/u.lock UPDATE_SCRIPT=$PWD/rmmagent-linux.sh"
+    expect_rc "updater --check : agent ancien"      10 $_u TACTICAL_AGENT_PATH="$_stub/a-1.0.0" bash scripts/linux/auto-update/tactical-agent-updater.sh --check
+    expect_rc "updater --check : agent à jour"       0 $_u TACTICAL_AGENT_PATH="$_stub/a-$_target" bash scripts/linux/auto-update/tactical-agent-updater.sh --check
+    expect_rc "update-tactical-agent --dry-run : à jour" 0 env TACTICAL_AGENT_PATH="$_stub/a-$_target" bash scripts/system/update-tactical-agent.sh --dry-run
+    # Hors commentaires : les en-têtes documentent les anciens défauts.
+    if grep -hvE '^[[:space:]]*#' scripts/linux/auto-update/tactical-agent-updater.sh \
+            scripts/system/update-tactical-agent.sh \
+        | grep -qE 'YOUR_USER|/etc/tacticalagent/\.version|tactical\.sh|curl -k|no-check-certificate'; then
+        ko "chemins morts ou TLS désactivé encore présents dans les scripts de mise à jour"
+    else
+        ok "aucun chemin mort ni TLS désactivé dans les scripts de mise à jour"
+    fi
+fi
+rm -rf "$_stub"
+
+# -----------------------------------------------------------------------------
+head_ "8c. Serveur RMM : watchdog PostgreSQL et sauvegarde"
+# Affecté : l'ancien watchdog (une ligne cron) écrivait chaque minute dans un
+# journal sans rotation (224 351 lignes pour 1 incident). La sauvegarde ne
+# contenait ni certificats ni config nginx/systemd. Faux pg_isready/systemctl :
+# ni root ni PostgreSQL nécessaires.
+_w=$(mktemp -d); mkdir "$_w/bin"
+printf '#!/bin/sh\necho "$*" >> %s/calls\n' "$_w" > "$_w/bin/systemctl"
+fakepg() { printf '#!/bin/sh\nexit %s\n' "$1" > "$_w/bin/pg_isready"; chmod +x "$_w/bin/"*; rm -f "$_w/calls" "$_w/log"; }
+runwd() { PATH="$_w/bin:$PATH" PG_WATCHDOG_LOG="$_w/log" PG_WATCHDOG_RETRY_DELAY=0 PG_WATCHDOG_RESTART_DELAY=0 \
+    bash server/postgresql-watchdog.sh >/dev/null 2>&1; }
+fakepg 0; runwd
+if [ ! -e "$_w/calls" ] && [ ! -e "$_w/log" ]; then ok "watchdog : PostgreSQL OK -> aucun redémarrage, aucun journal"
+else ko "watchdog : PostgreSQL OK mais action ou écriture" "$(cat "$_w/calls" "$_w/log" 2>/dev/null | head -3)"; fi
+fakepg 2; runwd
+if [ "$(tr '\n' '|' < "$_w/calls" 2>/dev/null)" = "restart postgresql@15-main|restart meshcentral|" ]; then
+    ok "watchdog : PostgreSQL KO -> postgresql puis meshcentral redémarrés"
+else ko "watchdog : séquence de redémarrage inattendue" "$(tr '\n' '|' < "$_w/calls" 2>/dev/null)"; fi
+grep -q 'ECHEC' "$_w/log" 2>/dev/null && ok "watchdog : échec persistant journalisé" || ko "watchdog : échec persistant non journalisé"
+rm -rf "$_w"
+grep -q 'postgresql-watchdog\.log' server/logrotate.d/postgresql-watchdog \
+    && ok "watchdog : rotation du journal configurée" || ko "watchdog : pas de rotation pour le journal"
+
+for f in sys/certs/etc-letsencrypt.tar.gz sys/nginx/nginx.conf sys/systemd/rmm.service db/tacticalrmm.dump; do
+    grep -qF "$f" server/backup-rmm.sh || ko "backup : $f absent du contrôle d'archive"
+done && ok "backup : config système et dump dans le contrôle d'archive"
+# Identifiants propres à l'installation : dans /etc/backup-rmm.conf, jamais dans le dépôt public.
+if grep -hvE '^[[:space:]]*#' server/backup-rmm.sh server/backup-rmm.conf.example | grep -qE '=[0-9]{6,}'; then
+    ko "backup : identifiant d'installation codé en dur"
+else ok "backup : aucun identifiant d'installation dans le dépôt"; fi
+grep -qE 'Authorization: Bearer \$|bot\$\{?TELEGRAM' server/backup-rmm.sh \
+    && ko "backup : secret passé en argument de curl (visible via ps)" \
+    || ok "backup : secrets passés à curl par stdin"
+_c=$(mktemp -d); printf 'DRIVE_ID=1\nACCOUNT_ID=1\nDIR_ID=1\n' > "$_c/conf"; chmod 644 "$_c/conf"
+# Le contrôle de droits précède toute action : on le teste sans root en
+# neutralisant uniquement la vérification d'identité.
+# WORKDIR et token Telegram redirigés : fail() nettoie WORKDIR et notifie.
+sed -e 's/^\[ "$(id -u)" -eq 0 \].*$/:/' -e "s#^WORKDIR=.*#WORKDIR=$_c/work#" \
+    -e "s#^TELEGRAM_BOT_TOKEN_FILE=.*#TELEGRAM_BOT_TOKEN_FILE=$_c/none#" server/backup-rmm.sh > "$_c/b.sh"
+_out=$(BACKUP_RMM_CONF="$_c/conf" LOG_FILE="$_c/l" bash "$_c/b.sh" 2>&1); _rc=$?
+if [ "$_rc" -ne 0 ] && grep -q 'Droits refuses' <<<"$_out"; then ok "backup : conf modifiable par d'autres que root -> refus (code $_rc)"
+else ko "backup : conf 644 acceptée" "code $_rc : $(head -2 <<<"$_out")"; fi
+_out=$(BACKUP_RMM_CONF="$_c/absent" bash "$_c/b.sh" 2>&1); _rc=$?
+[ "$_rc" -ne 0 ] && grep -q 'introuvable' <<<"$_out" && ok "backup : conf absente -> refus (code $_rc)" || ko "backup : conf absente acceptée" "$_out"
+rm -rf "$_c"
+
+# -----------------------------------------------------------------------------
 head_ "9. ShellCheck — pas de nouvel avertissement"
 # Affecté : diag-rmm.sh v4Mergé triggers were caught by bash -n but SC1073
 # flagged a [ -d x 2>/dev/null ] that works in bash and in dash. Faux positif.
