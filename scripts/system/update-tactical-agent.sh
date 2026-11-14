@@ -1,359 +1,188 @@
 #!/bin/bash
 
 ###############################################################################
-# Script de mise à jour de l'agent Tactical RMM Linux
-# Compatible avec toutes les distributions Linux supportées
+# Mise à jour manuelle de l'agent Tactical RMM Linux
 #
 # Usage: sudo ./update-tactical-agent.sh [options]
-# Options:
-#   --force            Forcer la mise à jour même si déjà à jour
-#   --backup           Créer une sauvegarde avant la mise à jour
-#   --quiet            Mode silencieux (moins de logs)
-#   --dry-run          Simuler la mise à jour sans l'exécuter
+#   --force        Mettre à jour même si l'agent est déjà à la version visée
+#   --backup       Copier binaire + /etc/tacticalagent dans /root/tactical-agent-backups/
+#   --ref vX.Y.Z   Tag rmmagent visé (défaut : celui de rmmagent-linux.sh)
+#   --quiet        N'afficher que les avertissements et erreurs
+#   --dry-run      Afficher l'état et la décision, sans rien modifier (sans root)
+#
+# Codes retour : 0 succès ou déjà à jour, 1 erreur, 10 (--dry-run) MAJ nécessaire.
+#
+# v2.0 : réécriture. La v1.2 cherchait /usr/local/tactical/tactical.sh et
+# /var/tactical/tactical.sh, qui n'existent sur aucune installation (ni
+# officielle, ni rmmagent-linux.sh) : le script sortait en erreur dès la
+# première vérification. Son repli téléchargeait $TACTICAL_URL/api/v3/linux/update/,
+# route inexistante, et l'exécutait en root avec la vérification TLS
+# désactivée (curl -k / wget --no-check-certificate).
+# Le travail est désormais délégué à rmmagent-linux.sh (check / update).
 ###############################################################################
 
-set -e
+set -u
 
-# === VARIABLES GLOBALES ===
-SCRIPT_VERSION="1.2"
-SCRIPT_NAME="Mise à jour Agent Tactical RMM"
+SCRIPT_VERSION="2.0"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENGINE_URL="${UPDATE_SCRIPT_URL:-https://raw.githubusercontent.com/fred-selest/tactical-rmm/main/rmmagent-linux.sh}"
+AGENT_CONFIG="/etc/tacticalagent"
 
-# Déterminer le fichier de log en fonction des permissions
 if [ -w "/var/log" ]; then
     LOG_FILE="/var/log/tacticalrmm-agent-update.log"
 else
-    LOG_FILE="/tmp/tacticalrmm-agent-update.log"
+    LOG_FILE="/dev/null"
 fi
 
-# URL de votre serveur Tactical RMM
-TACTICAL_URL="https://rmm.selest.info"
-
-# Options
 FORCE_UPDATE=false
-CREATE_BACKUP=false  
+CREATE_BACKUP=false
 QUIET_MODE=false
 DRY_RUN=false
-
-# Couleurs
-if [ "$QUIET_MODE" = false ]; then
-    RED='\033[0;31m'
-    GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'
-    BLUE='\033[0;34m'
-    CYAN='\033[0;36m'
-    NC='\033[0m'
-    BOLD='\033[1m'
-else
-    RED=''; GREEN=''; YELLOW=''; BLUE=''; CYAN=''; NC=''; BOLD=''
-fi
-
-# === FONCTIONS UTILITAIRES ===
+AGENT_REF_OVERRIDE=""
+TMP_ENGINE=""
 
 log() {
-    local level="$1"
-    local message="$2"
-    local timestamp="[$(date '+%Y-%m-%d %H:%M:%S')]"
-    
-    # Journalisation dans le fichier
-    echo "$timestamp [$level] $message" >> "$LOG_FILE"
-    
-    # Affichage console (sauf en mode silencieux pour INFO)
+    local level="$1" message="$2"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >> "$LOG_FILE"
     if [ "$QUIET_MODE" = false ] || [ "$level" != "INFO" ]; then
-        case $level in
-            "INFO") echo -e "${CYAN}ℹ $message${NC}" ;;
-            "SUCCESS") echo -e "${GREEN}✓ $message${NC}" ;;
-            "WARNING") echo -e "${YELLOW}⚠ $message${NC}" ;;
-            "ERROR") echo -e "${RED}✗ $message${NC}" ;;
-            "STEP") echo -e "${BLUE}${BOLD}[$message]${NC}" ;;
-        esac
+        echo "[$level] $message"
     fi
 }
 
-print_header() {
-    if [ "$QUIET_MODE" = false ]; then
-        echo ""
-        echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${CYAN}${BOLD}  $1${NC}"
-        echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-    fi
-}
+cleanup() { [ -n "$TMP_ENGINE" ] && rm -f "$TMP_ENGINE"; }
+trap cleanup EXIT
 
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        log "ERROR" "Ce script doit être exécuté en tant que root"
-        echo "Utilisez: sudo $0"
-        exit 1
-    fi
-}
-
-check_tactical_installed() {
-    log "STEP" "Vérification de l'installation Tactical RMM..."
-    
-    if [ -f "/usr/local/tactical/tactical.sh" ]; then
-        TACTICAL_SCRIPT="/usr/local/tactical/tactical.sh"
-        log "SUCCESS" "Agent Tactical trouvé : $TACTICAL_SCRIPT"
-    elif [ -f "/var/tactical/tactical.sh" ]; then
-        TACTICAL_SCRIPT="/var/tactical/tactical.sh"
-        log "SUCCESS" "Agent Tactical trouvé : $TACTICAL_SCRIPT"
-    else
-        log "ERROR" "Agent Tactical RMM non trouvé"
-        log "INFO" "Chemin vérifiés : /usr/local/tactical/tactical.sh, /var/tactical/tactical.sh"
-        exit 1
-    fi
-    
-    # Vérifier que le script est exécutable
-    if [ ! -x "$TACTICAL_SCRIPT" ]; then
-        log "WARNING" "Le script Tactical n'est pas exécutable, tentative de correction..."
-        chmod +x "$TACTICAL_SCRIPT"
-    fi
-}
-
-get_current_version() {
-    log "INFO" "Récupération de la version actuelle..."
-    
-    if [ -f "/usr/local/tactical/agent-version.txt" ]; then
-        CURRENT_VERSION=$(cat /usr/local/tactical/agent-version.txt)
-    elif [ -f "/var/tactical/agent-version.txt" ]; then
-        CURRENT_VERSION=$(cat /var/tactical/agent-version.txt)
-    else
-        # Essayer d'extraire la version du script
-        CURRENT_VERSION=$($TACTICAL_SCRIPT --version 2>/dev/null || echo "inconnue")
-    fi
-    
-    log "INFO" "Version actuelle : $CURRENT_VERSION"
-    echo "$CURRENT_VERSION"
-}
-
-check_server_connectivity() {
-    log "STEP" "Vérification de la connectivité au serveur..."
-    
-    if command -v curl >/dev/null 2>&1; then
-        if curl -k --max-time 10 --silent --head --output /dev/null "$TACTICAL_URL/api/v3/" 2>/dev/null; then
-            log "SUCCESS" "Connexion au serveur réussie : $TACTICAL_URL"
-            return 0
-        fi
-    elif command -v wget >/dev/null 2>&1; then
-        if wget --no-check-certificate --timeout=10 --spider "$TACTICAL_URL/api/v3/" >/dev/null 2>&1; then
-            log "SUCCESS" "Connexion au serveur réussie : $TACTICAL_URL"
-            return 0
-        fi
-    fi
-    
-    log "ERROR" "Impossible de se connecter au serveur : $TACTICAL_URL"
-    log "INFO" "Vérifiez que le serveur est accessible et que les certificats SSL sont valides"
-    exit 1
-}
-
-create_backup() {
-    if [ "$CREATE_BACKUP" = false ]; then
-        return 0
-    fi
-    
-    print_header "Création de la sauvegarde"
-    
-    BACKUP_DIR="/root/tactical-agent-backups/$(date +%Y%m%d-%H%M%S)"
-    mkdir -p "$BACKUP_DIR"
-    
-    # Sauvegarder le script principal
-    if [ -f "$TACTICAL_SCRIPT" ]; then
-        cp "$TACTICAL_SCRIPT" "$BACKUP_DIR/"
-        log "SUCCESS" "Script agent sauvegardé"
-    fi
-    
-    # Sauvegarder les fichiers de configuration
-    if [ -d "/usr/local/tactical/" ]; then
-        cp -r /usr/local/tactical/ "$BACKUP_DIR/tactical/"
-        log "SUCCESS" "Configuration sauvegardée (/usr/local/tactical/)"
-    elif [ -d "/var/tactical/" ]; then
-        cp -r /var/tactical/ "$BACKUP_DIR/tactical/"
-        log "SUCCESS" "Configuration sauvegardée (/var/tactical/)"
-    fi
-    
-    # Sauvegarder les logs
-    if [ -f "/var/log/tacticalrmm.log" ]; then
-        cp "/var/log/tacticalrmm.log" "$BACKUP_DIR/"
-        log "SUCCESS" "Logs sauvegardés"
-    fi
-    
-    log "SUCCESS" "Sauvegarde créée dans : $BACKUP_DIR"
-}
-
-update_via_script() {
-    print_header "Mise à jour de l'agent"
-    
-    if [ "$DRY_RUN" = true ]; then
-        log "INFO" "Mode simulation - aucune mise à jour réelle effectuée"
-        log "INFO" "Commande qui serait exécutée : $TACTICAL_SCRIPT"
-        return 0
-    fi
-    
-    log "STEP" "Exécution du script de mise à jour..."
-    
-    # Méthode 1 : Utiliser le script existant
-    if "$TACTICAL_SCRIPT" update 2>>"$LOG_FILE"; then
-        log "SUCCESS" "Mise à jour via script existant réussie"
-        return 0
-    fi
-    
-    # Méthode 2 : Télécharger et exécuter le script de mise à jour
-    log "WARNING" "Méthode 1 échouée, tentative avec téléchargement direct..."
-    
-    TEMP_SCRIPT="/tmp/tactical-update-$$"
-    
-    if command -v curl >/dev/null 2>&1; then
-        if curl -k -s "$TACTICAL_URL/api/v3/linux/update/" -o "$TEMP_SCRIPT" 2>>"$LOG_FILE"; then
-            chmod +x "$TEMP_SCRIPT"
-            if "$TEMP_SCRIPT" 2>>"$LOG_FILE"; then
-                log "SUCCESS" "Mise à jour par téléchargement réussie"
-                rm -f "$TEMP_SCRIPT"
-                return 0
-            fi
-        fi
-    elif command -v wget >/dev/null 2>&1; then
-        if wget --no-check-certificate -q "$TACTICAL_URL/api/v3/linux/update/" -O "$TEMP_SCRIPT" 2>>"$LOG_FILE"; then
-            chmod +x "$TEMP_SCRIPT"
-            if "$TEMP_SCRIPT" 2>>"$LOG_FILE"; then
-                log "SUCCESS" "Mise à jour par téléchargement réussie"
-                rm -f "$TEMP_SCRIPT"
-                return 0
-            fi
-        fi
-    fi
-    
-    # Nettoyer le script temporaire
-    rm -f "$TEMP_SCRIPT"
-    
-    log "ERROR" "Échec de la mise à jour par toutes les méthodes"
-    exit 1
-}
-
-verify_update() {
-    print_header "Vérification de la mise à jour"
-    
-    sleep 5  # Attendre que l'agent redémarre
-    
-    NEW_VERSION=$(get_current_version)
-    log "INFO" "Nouvelle version : $NEW_VERSION"
-    
-    # Vérifier que l'agent est actif
-    if systemctl is-active --quiet tacticalagent 2>/dev/null; then
-        log "SUCCESS" "Agent Tactical actif après la mise à jour"
-    elif pgrep -f "tacticalagent" >/dev/null 2>&1; then
-        log "SUCCESS" "Agent Tactical en cours d'exécution après la mise à jour"
-    else
-        log "WARNING" "Agent Tactical non détecté comme actif"
-        log "INFO" "Cela peut être normal si l'agent utilise un autre système de démarrage"
-    fi
-    
-    # Vérifier la connectivité
-    check_server_connectivity
-}
+usage() { sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'; }
 
 parse_arguments() {
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --force)
-                FORCE_UPDATE=true
-                shift
-                ;;
-            --backup)
-                CREATE_BACKUP=true
-                shift
-                ;;
-            --quiet)
-                QUIET_MODE=true
-                shift
-                ;;
-            --dry-run)
-                DRY_RUN=true
-                shift
-                ;;
-            *)
-                log "ERROR" "Option inconnue: $1"
-                echo "Usage: $0 [--force] [--backup] [--quiet] [--dry-run]"
-                exit 1
-                ;;
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --force)   FORCE_UPDATE=true ;;
+            --backup)  CREATE_BACKUP=true ;;
+            --quiet)   QUIET_MODE=true ;;
+            --dry-run) DRY_RUN=true ;;
+            --ref)     shift; AGENT_REF_OVERRIDE="${1:-}"
+                       [ -n "$AGENT_REF_OVERRIDE" ] || { echo "--ref attend un tag" >&2; exit 1; } ;;
+            -h|--help) usage; exit 0 ;;
+            *) echo "Option inconnue: $1" >&2; usage; exit 1 ;;
         esac
+        shift
     done
 }
 
-show_completion_summary() {
-    if [ "$QUIET_MODE" = true ]; then
-        return
+# Script moteur : copie du dépôt, copie installée, ou téléchargement TLS vérifié.
+find_engine() {
+    local c
+    for c in "$SCRIPT_DIR/../../rmmagent-linux.sh" /usr/local/bin/rmmagent-linux.sh; do
+        if [ -f "$c" ] && grep -q '^function check_agent()' "$c"; then
+            ENGINE="$(readlink -f "$c")"
+            return 0
+        fi
+    done
+    TMP_ENGINE=$(mktemp /tmp/rmmagent-linux.XXXXXX.sh) || return 1
+    if ! curl -fsSL --max-time 60 -o "$TMP_ENGINE" "$ENGINE_URL" \
+        || ! bash -n "$TMP_ENGINE" 2>/dev/null \
+        || ! grep -q '^function check_agent()' "$TMP_ENGINE"; then
+        log "ERROR" "rmmagent-linux.sh introuvable localement et téléchargement invalide : $ENGINE_URL"
+        return 1
     fi
-    
-    clear
-    echo -e "${GREEN}${BOLD}"
-    cat << "EOF"
-╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
-║          ✅  MISE À JOUR AGENT RÉUSSIE !  ✅                  ║
-║                                                               ║
-╚═══════════════════════════════════════════════════════════════╝
-EOF
-    echo -e "${NC}"
-    
-    print_header "🎯 Résumé de la mise à jour"
-    echo -e "${GREEN}✓ Agent Tactical RMM mis à jour${NC}"
-    echo -e "${GREEN}✓ Connexion au serveur vérifiée${NC}"
-    echo ""
-    
-    if [ "$CREATE_BACKUP" = true ]; then
-        echo -e "${CYAN}📁 Sauvegarde créée dans /root/tactical-agent-backups/${NC}"
+    ENGINE="$TMP_ENGINE"
+}
+
+engine() {
+    if [ -n "$AGENT_REF_OVERRIDE" ]; then
+        TACTICAL_AGENT_REF="$AGENT_REF_OVERRIDE" bash "$ENGINE" "$@"
+    else
+        bash "$ENGINE" "$@"
     fi
-    
-    echo -e "${CYAN}📋 Logs : $LOG_FILE${NC}"
+}
+
+# Remplit AGENT_PATH / INSTALLED / TARGET / STATUS, renvoie 0 / 10 / 2.
+run_check() {
+    local out rc
+    out=$(engine check 2>&1); rc=$?
+    AGENT_PATH=$(sed -n 's/^AGENT_PATH=//p' <<< "$out")
+    INSTALLED=$(sed -n 's/^INSTALLED=//p' <<< "$out")
+    TARGET=$(sed -n 's/^TARGET=//p' <<< "$out")
+    STATUS=$(sed -n 's/^STATUS=//p' <<< "$out")
+    return $rc
+}
+
+# Serveur lu dans la configuration de l'agent, TLS vérifié.
+check_server_connectivity() {
+    local url code
+    url="${TACTICAL_URL:-}"
+    if [ -z "$url" ] && [ -r "$AGENT_CONFIG" ]; then
+        url=$(sed -n 's/.*"baseurl" *: *"\([^"]*\)".*/\1/p' "$AGENT_CONFIG" | head -1)
+    fi
+    if [ -z "$url" ]; then
+        log "WARNING" "URL du serveur inconnue (ni TACTICAL_URL ni $AGENT_CONFIG lisible), test sauté"
+        return 0
+    fi
+    code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$url/" 2>/dev/null)
+    if [ -z "$code" ] || [ "$code" = "000" ]; then
+        log "ERROR" "Serveur injoignable ou certificat invalide : $url"
+        return 1
+    fi
+    log "INFO" "Serveur joignable : $url (HTTP $code)"
+}
+
+create_backup() {
+    local dir
+    dir="/root/tactical-agent-backups/$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$dir" && chmod 700 "$dir" || { log "ERROR" "Création de $dir impossible"; return 1; }
+    cp -p "$AGENT_PATH" "$dir/" || { log "ERROR" "Copie de $AGENT_PATH impossible"; return 1; }
+    [ -f "$AGENT_CONFIG" ] && cp -p "$AGENT_CONFIG" "$dir/"
+    log "SUCCESS" "Sauvegarde : $dir"
 }
 
 # === MAIN ===
 
-# Analyse des arguments
 parse_arguments "$@"
+log "INFO" "update-tactical-agent v$SCRIPT_VERSION"
 
-# Banner initial
-if [ "$QUIET_MODE" = false ] && [ "$DRY_RUN" = false ]; then
-    clear
-    echo -e "${MAGENTA}${BOLD}"
-    cat << "EOF"
-╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
-║   🔄  TACTICAL RMM - MISE À JOUR AGENT LINUX  🔄             ║
-║                                                               ║
-╚═══════════════════════════════════════════════════════════════╝
-EOF
-    echo -e "${NC}"
-    echo ""
+if [ "$DRY_RUN" = false ] && [ "$EUID" -ne 0 ]; then
+    log "ERROR" "Ce script doit être exécuté en tant que root (ou avec --dry-run)"
+    exit 1
 fi
 
-log "INFO" "Démarrage de la mise à jour v$SCRIPT_VERSION"
+ENGINE=""
+find_engine || exit 1
+log "INFO" "Moteur : $ENGINE"
 
-# Vérification des privilèges root
-check_root
-
-# Vérification de l'installation Tactical
-check_tactical_installed
-
-# Vérification de la connectivité au serveur
-check_server_connectivity
-
-# Récupération de la version actuelle
-CURRENT_VERSION=$(get_current_version)
-
-# Création de la sauvegarde
-create_backup
-
-# Mise à jour de l'agent
-update_via_script
-
-# Vérification de la mise à jour
-if [ "$DRY_RUN" = false ]; then
-    verify_update
+run_check
+rc=$?
+log "INFO" "Agent : ${AGENT_PATH:-?} | installée : ${INSTALLED:-?} | visée : ${TARGET:-?} | état : ${STATUS:-?}"
+if [ $rc -ne 0 ] && [ $rc -ne 10 ]; then
+    log "ERROR" "État indéterminable ($STATUS)"
+    exit 1
 fi
 
-# Affichage du résumé
-show_completion_summary
+if [ $rc -eq 0 ] && [ "$FORCE_UPDATE" = false ]; then
+    log "SUCCESS" "Agent déjà à jour"
+    exit 0
+fi
 
-log "INFO" "Mise à jour de l'agent Tactical RMM terminée avec succès"
+check_server_connectivity || exit 1
 
+if [ "$DRY_RUN" = true ]; then
+    log "INFO" "Simulation : rmmagent-linux.sh update serait lancé"
+    exit 10
+fi
+
+if [ "$CREATE_BACKUP" = true ]; then
+    create_backup || exit 1
+fi
+
+log "INFO" "Lancement de rmmagent-linux.sh update..."
+if ! engine update >> "$LOG_FILE" 2>&1; then
+    log "ERROR" "Échec de la mise à jour (détail : $LOG_FILE)"
+    exit 1
+fi
+
+if ! run_check; then
+    log "ERROR" "Après mise à jour : $STATUS (installée $INSTALLED, visée $TARGET)"
+    exit 1
+fi
+log "SUCCESS" "Agent en $INSTALLED, service actif"
 exit 0

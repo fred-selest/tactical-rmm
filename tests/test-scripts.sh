@@ -136,6 +136,49 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+head_ "8b. Mise à jour agent : rmmagent-linux.sh check et wrappers"
+# Affecté : tactical-agent-updater.sh lisait la version via un chemin
+# impossible (/etc/tacticalagent/.version) et `rmmagent -v` : version
+# « inconnue », recompilation à chaque passage. update-tactical-agent.sh
+# cherchait un tactical.sh qui n'existe nulle part. Agents factices : le test
+# ne dépend ni de root ni d'un agent installé.
+_stub=$(mktemp -d)
+_target=$(sed -n 's/^AGENT_REF="${TACTICAL_AGENT_REF:-v\([0-9.]*\)}"$/\1/p' rmmagent-linux.sh)
+mkstub() {
+    printf '#!/bin/sh\n[ "$1" = -version ] && echo "Tactical RMM Agent: %s"\nexit 0\n' "$1" > "$_stub/a-$1"
+    chmod +x "$_stub/a-$1"
+}
+expect_rc() {   # libellé, code attendu, commande...
+    local label=$1 want=$2; shift 2
+    "$@" >/dev/null 2>&1; local got=$?
+    if [ "$got" -eq "$want" ]; then ok "$label (code $got)"; else ko "$label" "code $got, attendu $want"; fi
+}
+if [ -z "$_target" ]; then
+    ko "AGENT_REF épinglé introuvable dans rmmagent-linux.sh"
+else
+    mkstub 1.0.0; mkstub "$_target"; mkstub 99.0.0
+    printf '#!/bin/sh\necho garbage\n' > "$_stub/a-bad"; chmod +x "$_stub/a-bad"
+    expect_rc "check : agent ancien -> MAJ"        10 env TACTICAL_AGENT_PATH="$_stub/a-1.0.0" bash rmmagent-linux.sh check
+    expect_rc "check : agent = $_target -> à jour"  0 env TACTICAL_AGENT_PATH="$_stub/a-$_target" bash rmmagent-linux.sh check
+    expect_rc "check : agent plus récent -> à jour" 0 env TACTICAL_AGENT_PATH="$_stub/a-99.0.0" bash rmmagent-linux.sh check
+    expect_rc "check : version illisible"            2 env TACTICAL_AGENT_PATH="$_stub/a-bad" bash rmmagent-linux.sh check
+    expect_rc "check : chemin imposé absent"         2 env TACTICAL_AGENT_PATH="$_stub/absent" bash rmmagent-linux.sh check
+    _u="env TACTICAL_UPDATER_CONF=$_stub/none TACTICAL_UPDATER_LOG=$_stub/u.log TACTICAL_UPDATER_LOCK=$_stub/u.lock UPDATE_SCRIPT=$PWD/rmmagent-linux.sh"
+    expect_rc "updater --check : agent ancien"      10 $_u TACTICAL_AGENT_PATH="$_stub/a-1.0.0" bash scripts/linux/auto-update/tactical-agent-updater.sh --check
+    expect_rc "updater --check : agent à jour"       0 $_u TACTICAL_AGENT_PATH="$_stub/a-$_target" bash scripts/linux/auto-update/tactical-agent-updater.sh --check
+    expect_rc "update-tactical-agent --dry-run : à jour" 0 env TACTICAL_AGENT_PATH="$_stub/a-$_target" bash scripts/system/update-tactical-agent.sh --dry-run
+    # Hors commentaires : les en-têtes documentent les anciens défauts.
+    if grep -hvE '^[[:space:]]*#' scripts/linux/auto-update/tactical-agent-updater.sh \
+            scripts/system/update-tactical-agent.sh \
+        | grep -qE 'YOUR_USER|/etc/tacticalagent/\.version|tactical\.sh|curl -k|no-check-certificate'; then
+        ko "chemins morts ou TLS désactivé encore présents dans les scripts de mise à jour"
+    else
+        ok "aucun chemin mort ni TLS désactivé dans les scripts de mise à jour"
+    fi
+fi
+rm -rf "$_stub"
+
+# -----------------------------------------------------------------------------
 head_ "9. ShellCheck — pas de nouvel avertissement"
 # Affecté : diag-rmm.sh v4Mergé triggers were caught by bash -n but SC1073
 # flagged a [ -d x 2>/dev/null ] that works in bash and in dash. Faux positif.
